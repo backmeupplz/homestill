@@ -4,8 +4,8 @@ import Observation
 import os
 import Security
 
-let clientId = "https://git.borodutch.com/backmeupplz/roomwell"
-let logger = Logger(subsystem: "com.borodutch.roomwell", category: "ha")
+let clientId = "https://git.borodutch.com/backmeupplz/homestill"
+let logger = Logger(subsystem: "com.borodutch.homestill", category: "ha")
 @MainActor let ha = Ha()
 
 /// One entity as `subscribe_entities` describes it: state + raw attributes.
@@ -471,7 +471,7 @@ extension Ha {
             let j = try? JSONSerialization.jsonObject(with: res.0)
             let list = (j as? [String: Any])?["providers"] as? [[String: Any]] ?? j as? [[String: Any]] ?? []
             if !list.contains(where: { $0["type"] as? String == "homeassistant" }) {
-                signInMessage = "This server needs a sign-in method Roomwell doesn't support yet."; return
+                signInMessage = "This server needs a sign-in method Homestill doesn't support yet."; return
             }
             break
         }
@@ -576,7 +576,7 @@ extension Ha {
         try? d.write(to: Self.snapshotURL, options: .atomic)
     }
 
-    private static let kq: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "roomwell", kSecAttrAccount as String: "account"]
+    private static let kq: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "homestill", kSecAttrAccount as String: "account"]
 
     static func keychain() -> [String: String]? {
         var q = kq; q[kSecReturnData as String] = true

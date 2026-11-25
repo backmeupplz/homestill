@@ -1,4 +1,4 @@
-# Roomwell
+# Homestill
 
 A small, fast, native Home Assistant client for Android (Kotlin, Jetpack Compose) and iPhone (SwiftUI). It does two
 things: control your devices and show your cameras live. No dashboards, no history, no settings editor.

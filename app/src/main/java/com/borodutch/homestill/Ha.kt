@@ -1,4 +1,4 @@
-package com.borodutch.roomwell
+package com.borodutch.homestill
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -34,8 +34,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-const val CLIENT_ID = "https://git.borodutch.com/backmeupplz/roomwell"
-private const val TAG = "Roomwell"
+const val CLIENT_ID = "https://git.borodutch.com/backmeupplz/homestill"
+private const val TAG = "Homestill"
 
 class Msg(message: String) : Exception(message)
 
@@ -118,7 +118,7 @@ object Ha {
             val list = runCatching { JSONObject(text).getJSONArray("providers") }.getOrElse { runCatching { JSONArray(text) }.getOrNull() }
                 ?: throw Msg("That doesn't look like Home Assistant.")
             if ((0 until list.length()).none { list.getJSONObject(it).optString("type") == "homeassistant" })
-                throw Msg("This server needs a sign-in method Roomwell doesn't support yet.")
+                throw Msg("This server needs a sign-in method Homestill doesn't support yet.")
             return b
         }
         throw Msg("Can't reach that server${lastErr?.message?.let { " ($it)" } ?: ""}.")

@@ -1,7 +1,7 @@
 import XCTest
-@testable import Roomwell
+@testable import Homestill
 
-@MainActor final class RoomwellTests: XCTestCase {
+@MainActor final class HomestillTests: XCTestCase {
     func testApplyAddChangeRemove() {
         var st: [String: Entity] = [:]
         var settled = Ha.apply(["a": [

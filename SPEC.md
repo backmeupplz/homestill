@@ -1,25 +1,24 @@
-# Roomwell spec
+# Homestill spec
 
-Roomwell is a small, fast Home Assistant client that does two things: control devices and watch cameras. Native on both
+Homestill is a small, fast Home Assistant client that does two things: control devices and watch cameras. Native on both
 phones: Android at the repo root (`app/`, Kotlin, Jetpack Compose + Material 3) and iPhone in `ios/` (SwiftUI). Both apps
 follow this document; when a platform has to differ, it says so here. Sister apps whose layout and habits we copy:
 Spinwell (`~/code/spinwell-main`, the closest: Compose + SwiftUI, SPEC-driven) and ABS+ (`~/code/absplus`).
 
-"Roomwell" is a working name (not confirmed yet), so keep it in as few places as possible: app name, package/bundle id,
-project names. No dashboards, history, sensors, automations, notifications, widgets, energy, map or settings editor.
+No dashboards, history, sensors, automations, notifications, widgets, energy, map or settings editor.
 
 ## Platforms
 
-- Android: package `com.borodutch.roomwell`, minSdk 29, target/compile 36, AGP/Gradle/Kotlin versions as Spinwell.
+- Android: package `com.borodutch.homestill`, minSdk 29, target/compile 36, AGP/Gradle/Kotlin versions as Spinwell.
   Dependencies: Compose BOM + ui + foundation + material3 + activity-compose (as Spinwell), `com.squareup.okhttp3:okhttp`
   (WebSocket; Android has no platform client; 5.3.x, since 5.5 needs compileSdk 37), `androidx.media3:media3-exoplayer` + `media3-exoplayer-hls` + `media3-ui`
   (camera video). Nothing else: `org.json` for JSON, no Retrofit/Coil/Room/serialization/ViewModel/DI. R8 on for release.
   Single activity, state in plain Kotlin objects observed by Compose (`mutableStateOf`/`mutableStateMapOf`).
   `android:usesCleartextTraffic="true"` (Home Assistant on the LAN is often plain http).
-- iOS: bundle `com.borodutch.roomwell`, team `ACWP4F58HZ`, iOS 26.1+, iPhone only, Swift 5 mode, no packages.
+- iOS: bundle `com.borodutch.homestill`, team `ACWP4F58HZ`, iOS 26.1+, iPhone only, Swift 5 mode, no packages.
   `URLSessionWebSocketTask`, AVKit for video, Keychain for the refresh token. Project file like Spinwell
   (`PBXFileSystemSynchronizedRootGroup`, so new files need no pbxproj edits). Info.plist: `NSAllowsArbitraryLoads = true`
-  and `NSLocalNetworkUsageDescription` ("Roomwell connects to Home Assistant on your network."). No
+  and `NSLocalNetworkUsageDescription` ("Homestill connects to Home Assistant on your network."). No
   `NSAllowsLocalNetworking`: when present, iOS ignores `NSAllowsArbitraryLoads` and blocks plain http to dotted hostnames
   (checked: `http://<mac>.<tailnet>.ts.net:8124` failed with error -1022 until the key was removed).
 - English only for now. Follows the system light/dark theme (Android: Material You dynamic color on 12+).
@@ -36,8 +35,8 @@ project names. No dashboards, history, sensors, automations, notifications, widg
 - Fields: server URL, username, password. URL normalization: trim, drop trailing `/`; no scheme → try `https://` then
   `http://` (first that answers `GET /auth/providers` wins).
 - `GET <base>/auth/providers`: must list a provider of type `homeassistant`, else show "This server needs a sign-in
-  method Roomwell doesn't support yet."
-- `CLIENT_ID = "https://git.borodutch.com/backmeupplz/roomwell"` on both platforms; `redirect_uri` = the same string
+  method Homestill doesn't support yet."
+- `CLIENT_ID = "https://git.borodutch.com/backmeupplz/homestill"` on both platforms; `redirect_uri` = the same string
   (same origin as the client id, so Home Assistant never fetches it). It names the app in the user's HA token list.
 - Flow (JSON bodies):
   1. `POST /auth/login_flow` `{"client_id":CLIENT_ID,"handler":["homeassistant",null],"redirect_uri":CLIENT_ID}`
@@ -156,7 +155,7 @@ project names. No dashboards, history, sensors, automations, notifications, widg
 
 - Unit tests (pure logic, no network): applying `subscribe_entities` events (a/c/r merging), building the Home model
   (domain filter, hidden/category skip, area resolution entity→device→Other, prefix stripping, sort), lock tap decision,
-  token-needs-refresh decision. Android JUnit (`testDebugUnitTest`), iOS XCTest target `RoomwellTests`.
+  token-needs-refresh decision. Android JUnit (`testDebugUnitTest`), iOS XCTest target `HomestillTests`.
 - Control testing happens only against the throwaway demo server (`tools/demo-ha.sh`: Docker Home Assistant with the
   `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). The real home server
   (`https://home.icefish-betta.ts.net`) holds real door locks and lights people are using: sign in, look, and watch the

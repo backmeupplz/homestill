@@ -3,7 +3,7 @@
 # controls without touching a real home. http://127.0.0.1:8124 (emulator: http://10.0.2.2:8124), user demo / demo-pass.
 # `tools/demo-ha.sh stop` removes it.
 set -e
-name=roomwell-demo-ha
+name=homestill-demo-ha
 docker rm -f $name >/dev/null 2>&1 || true
 [ "$1" = stop ] && exit 0
 dir="${TMPDIR:-/tmp}/$name"

@@ -1,4 +1,4 @@
-package com.borodutch.roomwell
+package com.borodutch.homestill
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
@@ -151,7 +151,7 @@ fun Live(url: String, modifier: Modifier, onFrame: () -> Unit, onError: () -> Un
     val error by rememberUpdatedState(onError)
     DisposableEffect(player) {
         player.addListener(object : Player.Listener {
-            override fun onRenderedFirstFrame() { Log.i("Roomwell", "first frame ${SystemClock.uptimeMillis() - started} ms after the stream URL"); frame() }
+            override fun onRenderedFirstFrame() { Log.i("Homestill", "first frame ${SystemClock.uptimeMillis() - started} ms after the stream URL"); frame() }
             override fun onPlayerError(e: PlaybackException) = error()
         })
         onDispose { player.release() }

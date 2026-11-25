@@ -1,4 +1,4 @@
-package com.borodutch.roomwell
+package com.borodutch.homestill
 
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
             if (intent.hasExtra("noservice")) Ha.readOnly = true
         }
         enableEdgeToEdge()
-        setContent { RoomwellTheme { Root() } }
+        setContent { HomestillTheme { Root() } }
     }
 
     override fun onStart() { super.onStart(); Ha.start() }

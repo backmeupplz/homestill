@@ -1,4 +1,4 @@
-package com.borodutch.roomwell
+package com.borodutch.homestill
 
 import org.json.JSONArray
 import org.json.JSONObject

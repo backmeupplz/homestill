@@ -4,10 +4,10 @@ plugins {
 }
 
 android {
-    namespace = "com.borodutch.roomwell"
+    namespace = "com.borodutch.homestill"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.borodutch.roomwell"
+        applicationId = "com.borodutch.homestill"
         minSdk = 29
         targetSdk = 36
         versionCode = 1

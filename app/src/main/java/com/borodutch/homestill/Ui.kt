@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
-package com.borodutch.roomwell
+package com.borodutch.homestill
 
 import android.os.Build
 import android.os.SystemClock
@@ -45,7 +45,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 @Composable
-fun RoomwellTheme(content: @Composable () -> Unit) {
+fun HomestillTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val ctx = LocalContext.current
     val scheme = when {
@@ -113,7 +113,7 @@ fun SignIn() {
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(Ic.Home, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-        Text("Roomwell", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp, bottom = 28.dp))
+        Text("Homestill", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp, bottom = 28.dp))
         val go = KeyboardActions(onGo = { go() })
         if (Ha.mfa) {
             OutlinedTextField(code, { code = it }, Modifier.fillMaxWidth(), label = { Text("Code") }, singleLine = true,

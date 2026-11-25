@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-@main struct RoomwellApp: App {
+@main struct HomestillApp: App {
     @Environment(\.scenePhase) private var phase
 
     init() {
@@ -57,7 +57,7 @@ struct SignIn: View {
             VStack(spacing: 24) {
                 VStack(spacing: 10) {
                     Image(systemName: "house.fill").font(.system(size: 56)).foregroundStyle(.tint)
-                    Text(verbatim: "Roomwell").font(.largeTitle.bold())
+                    Text(verbatim: "Homestill").font(.largeTitle.bold())
                     Text("Sign in to Home Assistant").foregroundStyle(.secondary)
                 }
                 .padding(.top, 60)

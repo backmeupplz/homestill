@@ -2,7 +2,7 @@ import XCTest
 
 /// Real gestures against the throwaway demo server only (tools/demo-ha.sh): signs out of whatever server the app had,
 /// signs in to http://127.0.0.1:8124. Skipped in the default test run; run with
-/// `xcodebuild test ... -only-testing:RoomwellUITests`.
+/// `xcodebuild test ... -only-testing:HomestillUITests`.
 final class DemoUITests: XCTestCase {
     func testLongPressSheetAndSlider() {
         let app = XCUIApplication()

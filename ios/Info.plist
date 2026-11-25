@@ -8,7 +8,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Roomwell connects to Home Assistant on your network.</string>
+	<string>Homestill connects to Home Assistant on your network.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
