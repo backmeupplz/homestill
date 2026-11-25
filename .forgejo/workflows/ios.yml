@@ -26,13 +26,15 @@ jobs:
       # xcodebuild runs with a clean environment because it reads every variable as a build setting. The generic simulator
       # destination needs no booted device, and no index store: nothing reads it here.
       - name: Build
+        env:
+          TOKEN: ${{ github.token }} # private repo: the fetch needs the job token
         run: |
           stage="${PWD%%/work/*}/ci/roomwell-ios"
           mkdir -p "$stage" && cd "$stage"
           rm -f .git/index.lock .git/shallow.lock # left by a cancelled run
           [ -d .git ] || { git init -q && git sparse-checkout set ios; }
           # Blobs up to 128 KB (every source file, not the store images) come with the fetch, so checkout fetches nothing more
-          git fetch -q --no-tags --depth=1 --filter=blob:limit=128k "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          git -c http.extraHeader="Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64)" fetch -q --no-tags --depth=1 --filter=blob:limit=128k "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA"
           git checkout -q -f FETCH_HEAD
           echo "Sources at $(git rev-parse --short HEAD)"
           env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \

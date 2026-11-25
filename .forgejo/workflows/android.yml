@@ -24,13 +24,15 @@ jobs:
       # Gradle's configuration cache and the previous run's outputs stay valid and only what changed is rebuilt and
       # retested. Only what the build reads (cone mode adds the root files): the store and site images stay out.
       - name: Sources
+        env:
+          TOKEN: ${{ github.token }} # private repo: the fetch needs the job token
         run: |
           src="${PWD%%/work/*}/ci/roomwell-android-git"
           mkdir -p "$src" && cd "$src"
           rm -f .git/index.lock .git/shallow.lock # left by a cancelled run
           [ -d .git ] || { git init -q && git sparse-checkout set app gradle; }
           # Blobs up to 128 KB (every source file, not the store images) come with the fetch, so checkout fetches nothing more
-          git fetch -q --no-tags --depth=1 --filter=blob:limit=128k "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          git -c http.extraHeader="Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64)" fetch -q --no-tags --depth=1 --filter=blob:limit=128k "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA"
           git checkout -q -f FETCH_HEAD
           echo "SRC=$src" >> "$GITHUB_ENV"
       # A pinned, checked Temurin and an SDK directory holding only the license (Gradle installs the platform and build
