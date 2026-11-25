@@ -88,7 +88,8 @@ struct TileView: View {
 
     static func tint(_ t: Tile) -> Color {
         if t.domain == "light" {
-            guard let c = t.rgb, c.count == 3 else { return .orange }
+            // white-ish colors would vanish on a light background: amber instead
+            guard let c = t.rgb, c.count == 3, (c.max() ?? 0) - (c.min() ?? 0) > 40 else { return .orange }
             return Color(red: Double(c[0]) / 255, green: Double(c[1]) / 255, blue: Double(c[2]) / 255)
         }
         if t.domain == "lock" { return t.s == "jammed" ? .red : .orange }
