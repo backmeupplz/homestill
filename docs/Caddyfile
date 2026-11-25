@@ -1,0 +1,6 @@
+:80 {
+	root * /srv
+	encode zstd gzip
+	header /og.png Cache-Control "public, max-age=86400"
+	file_server
+}
