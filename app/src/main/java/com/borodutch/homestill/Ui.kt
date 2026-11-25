@@ -29,8 +29,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -151,7 +164,8 @@ fun HomeScreen() {
             items(s.tiles, key = { "$i:" + it.id }) { t -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
         }
     }
-    sheet?.let { t -> ModalBottomSheet({ sheet = null }) { Detail(t) } }
+    // fully open at once: the color wheel would sit below a half-open sheet
+    sheet?.let { t -> ModalBottomSheet({ sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) { Detail(t) } }
     confirm?.let { t ->
         AlertDialog({ confirm = null }, title = { Text("Unlock ${t.name}?") },
             confirmButton = { TextButton({ Ha.call("lock", "unlock", t.id, flip = "unlocking"); confirm = null }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Unlock") } },
@@ -234,13 +248,16 @@ fun Detail(t: Tile) {
                 if ("color_temp" in modes) {
                     val lo = e.a.num("min_color_temp_kelvin")?.toFloat() ?: 2000f
                     val hi = e.a.num("max_color_temp_kelvin")?.toFloat() ?: 6500f
-                    // right = warmer
-                    Ctl("Warmth", lo + hi - (e.a.num("color_temp_kelvin")?.toFloat() ?: hi), lo..hi) {
-                        Ha.call("light", "turn_on", t.id, JSONObject().put("color_temp_kelvin", Math.round(lo + hi - it)))
+                    Ctl("Warmth", e.a.num("color_temp_kelvin")?.toFloat() ?: hi, lo..hi, Warm) {
+                        Ha.call("light", "turn_on", t.id, JSONObject().put("color_temp_kelvin", Math.round(it)))
                     }
                 }
-                if (modes.any { it in HS_MODES }) Ctl("Color", e.a.optJSONArray("hs_color")?.optDouble(0)?.takeUnless { it.isNaN() }?.toFloat() ?: 0f, 0f..360f) {
-                    Ha.call("light", "turn_on", t.id, JSONObject().put("hs_color", JSONArray().put(Math.round(it)).put(100)))
+                if (modes.any { it in HS_MODES }) {
+                    val hs = e.a.optJSONArray("hs_color")
+                    Text("Color", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+                    Wheel(hs?.optDouble(0)?.toFloat()?.takeUnless { it.isNaN() } ?: 0f, hs?.optDouble(1)?.toFloat()?.takeUnless { it.isNaN() } ?: 0f) { h, sat ->
+                        Ha.call("light", "turn_on", t.id, JSONObject().put("hs_color", JSONArray().put(Math.round(h)).put(Math.round(sat))))
+                    }
                 }
             }
             "fan" -> if (f and 1 != 0) Ctl("Speed", e.a.num("percentage")?.toFloat() ?: 0f, 0f..100f) {
@@ -261,7 +278,7 @@ fun Detail(t: Tile) {
 
 /** A slider that sends on release and at most every 300 ms while dragging, then follows the server again. */
 @Composable
-fun Ctl(label: String, server: Float, range: ClosedFloatingPointRange<Float>, send: (Float) -> Unit) {
+fun Ctl(label: String, server: Float, range: ClosedFloatingPointRange<Float>, brush: Brush? = null, send: (Float) -> Unit) {
     var v by remember { mutableStateOf<Float?>(null) }
     var dragging by remember { mutableStateOf(false) }
     var last by remember { mutableLongStateOf(0L) }
@@ -271,7 +288,47 @@ fun Ctl(label: String, server: Float, range: ClosedFloatingPointRange<Float>, se
         v = it; dragging = true
         val now = SystemClock.uptimeMillis()
         if (now - last >= 300) { last = now; send(it) }
-    }, valueRange = range, onValueChangeFinished = { dragging = false; v?.let(send) })
+    }, valueRange = range, onValueChangeFinished = { dragging = false; v?.let(send) },
+        track = { if (brush == null) SliderDefaults.Track(it) else Box(Modifier.fillMaxWidth().height(16.dp).clip(CircleShape).background(brush)) })
+}
+
+/** Warm (low kelvin) on the left, cool on the right. */
+private val Warm = Brush.horizontalGradient(listOf(Color(0xFFFFA24A), Color(0xFFFFF3E0), Color(0xFFCFDFFF)))
+private val Hues = Brush.sweepGradient((0..6).map { Color.hsv(it * 60f, 1f, 1f) })
+
+/** Hue/saturation wheel: angle = hue (clockwise from red at 3 o'clock), distance from the center = saturation. Sends like [Ctl]. */
+@Composable
+fun Wheel(hue: Float, sat: Float, send: (Float, Float) -> Unit) {
+    var v by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+    var last by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(hue, sat) { if (!dragging) v = null }
+    fun pick(p: Offset, size: IntSize, now: Boolean) {
+        val r = size.width / 2f
+        val (dx, dy) = p - Offset(r, r)
+        val hs = (Math.toDegrees(atan2(dy, dx).toDouble()).toFloat() + 360f) % 360f to (hypot(dx, dy) / r * 100f).coerceAtMost(100f)
+        v = hs
+        val t = SystemClock.uptimeMillis()
+        if (now || t - last >= 300) { last = t; send(hs.first, hs.second) }
+    }
+    val (h, s) = v ?: (hue to sat.coerceIn(0f, 100f))
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(240.dp)
+            .pointerInput(Unit) { detectTapGestures { pick(it, size, true) } }
+            .pointerInput(Unit) {
+                detectDragGestures(onDragStart = { dragging = true; pick(it, size, false) },
+                    onDragEnd = { dragging = false; v?.let { send(it.first, it.second) } },
+                    onDragCancel = { dragging = false }) { c, _ -> c.consume(); pick(c.position, size, false) }
+            }) {
+            drawCircle(Hues)
+            drawCircle(Brush.radialGradient(listOf(Color.White, Color.White.copy(alpha = 0f))))
+            val a = Math.toRadians(h.toDouble())
+            val at = center + Offset(cos(a).toFloat(), sin(a).toFloat()) * (size.minDimension / 2 * s / 100f)
+            drawCircle(Color.hsv(h, s / 100f, 1f), 14.dp.toPx(), at)
+            drawCircle(Color.White, 14.dp.toPx(), at, style = Stroke(3.dp.toPx()))
+            drawCircle(Color.Black.copy(alpha = 0.25f), 15.5.dp.toPx(), at, style = Stroke(1.dp.toPx()))
+        }
+    }
 }
 
 @Composable

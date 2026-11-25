@@ -23,6 +23,25 @@ final class DemoUITests: XCTestCase {
         XCTAssertTrue(label.contains("On · 2"), label) // ~25% came back from the server as the live state
     }
 
+    func testColorWheel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass"]
+        app.launch()
+        let tile = app.descendants(matching: .any)["light.ceiling_lights"]
+        XCTAssertTrue(tile.waitForExistence(timeout: 20))
+        tile.press(forDuration: 0.8)
+        let wheel = app.descendants(matching: .any)["wheel"]
+        XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+        wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap() // straight up: hue 270, saturation 80
+        sleep(2)
+        app.swipeDown(velocity: .fast)
+        sleep(1)
+        tile.press(forDuration: 0.8)
+        XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+        let v = wheel.value as? String ?? ""
+        XCTAssertTrue(v.hasPrefix("Hue 27") || v.hasPrefix("Hue 26"), v) // came back from the server
+    }
+
     func testFullScreenCameraRotates() {
         let app = XCUIApplication()
         app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass", "-tab", "cameras"]

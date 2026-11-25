@@ -26,7 +26,11 @@ struct HomeView: View {
             .navigationTitle("Home")
             .toolbar { Button("Settings", systemImage: "gearshape") { settings = true } }
             .sheet(isPresented: $settings) { SettingsView() }
-            .sheet(item: $detail) { DetailSheet(id: $0.id).presentationDetents([.medium]) }
+            .sheet(item: $detail) { d in
+                // the color wheel needs the full height
+                let color = !Set(ha.tile(d.id)?.modes ?? []).isDisjoint(with: ["hs", "rgb", "rgbw", "rgbww", "xy"])
+                DetailSheet(id: d.id).presentationDetents(color ? [.large] : [.medium])
+            }
             .alert(ha.unlockAsk.map { "Unlock \($0.name)?" } ?? "", isPresented: Binding { ha.unlockAsk != nil } set: { if !$0 { ha.unlockAsk = nil } }) {
                 Button("Unlock", role: .destructive) { if let t = ha.unlockAsk { ha.unlock(t) } }
                 Button("Cancel", role: .cancel) {}
@@ -147,13 +151,16 @@ struct DetailSheet: View {
             }
         }
         if modes.contains("color_temp"), let lo = t.minK, let hi = t.maxK, lo < hi {
-            SendSlider(label: "Warmth", value: Double(t.kelvin ?? (lo + hi) / 2), range: Double(lo)...Double(hi), unit: "K") {
+            SendSlider(label: "Warmth", value: Double(t.kelvin ?? (lo + hi) / 2), range: Double(lo)...Double(hi), unit: "K",
+                       track: LinearGradient(colors: [Color(red: 1, green: 0.64, blue: 0.29), Color(red: 1, green: 0.95, blue: 0.88),
+                                                      Color(red: 0.81, green: 0.87, blue: 1)], startPoint: .leading, endPoint: .trailing)) {
                 ha.service(id, "light", "turn_on", ["color_temp_kelvin": Int($0)])
             }
         }
         if !modes.isDisjoint(with: ["hs", "rgb", "rgbw", "rgbww", "xy"]) {
-            SendSlider(label: "Hue", value: t.hue ?? 0, range: 0...360, unit: "°") {
-                ha.service(id, "light", "turn_on", ["hs_color": [Int($0), 100]])
+            let hs = t.hs ?? []
+            Wheel(hue: hs.first ?? 0, sat: hs.count > 1 ? hs[1] : 0) { h, s in
+                ha.service(id, "light", "turn_on", ["hs_color": [Int(h.rounded()), Int(s.rounded())]])
             }
         }
     }
@@ -181,23 +188,108 @@ struct SendSlider: View {
     let value: Double
     let range: ClosedRange<Double>
     let unit: String
+    var track: LinearGradient? = nil
     let send: (Double) -> Void
     @State private var drag: Double?
     @State private var lastSent = Date.distantPast
     @State private var editing = false
 
     var body: some View {
+        let shown = drag ?? min(max(value, range.lowerBound), range.upperBound)
         VStack(alignment: .leading) {
-            LabeledContent(label, value: "\(Int((drag ?? value).rounded()))\(unit)")
-            Slider(value: Binding { drag ?? min(max(value, range.lowerBound), range.upperBound) } set: { v in
-                drag = v
-                if Date.now.timeIntervalSince(lastSent) >= 0.3 { lastSent = .now; send(v) }
-            }, in: range) { e in
-                editing = e
-                if !e, let d = drag { send(d); lastSent = .now } // keep showing it until the live value moves
+            LabeledContent(label, value: "\(Int(shown.rounded()))\(unit)")
+            Group {
+                if let track { // a gradient bar instead of the system track
+                    GeometryReader { g in
+                        let w = g.size.width - 28
+                        Capsule().fill(track).frame(height: 16).frame(maxHeight: .infinity)
+                            .overlay(alignment: .leading) {
+                                Circle().fill(.white).frame(width: 28, height: 28).shadow(radius: 2)
+                                    .offset(x: (shown - range.lowerBound) / (range.upperBound - range.lowerBound) * w)
+                            }
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0)
+                                .onChanged { e in
+                                    editing = true
+                                    set(range.lowerBound + min(max((e.location.x - 14) / w, 0), 1) * (range.upperBound - range.lowerBound))
+                                }
+                                .onEnded { _ in end() })
+                    }
+                    .frame(height: 32)
+                    .accessibilityElement().accessibilityValue("\(Int(shown.rounded()))\(unit)")
+                    .accessibilityAdjustableAction { dir in
+                        let step = (range.upperBound - range.lowerBound) / 10
+                        set(min(max(shown + (dir == .increment ? step : -step), range.lowerBound), range.upperBound)); end()
+                    }
+                } else {
+                    Slider(value: Binding(get: { shown }, set: set), in: range) { e in
+                        editing = e
+                        if !e { end() }
+                    }
+                }
             }
             .accessibilityIdentifier(label)
             .onChange(of: value) { if !editing { drag = nil } }
         }
+    }
+
+    private func set(_ v: Double) {
+        drag = v
+        if Date.now.timeIntervalSince(lastSent) >= 0.3 { lastSent = .now; send(v) }
+    }
+
+    /// Keeps showing the dragged value until the live value moves.
+    private func end() {
+        editing = false
+        if let d = drag { send(d); lastSent = .now }
+    }
+}
+
+/// Hue/saturation wheel: angle = hue (clockwise from red at 3 o'clock), distance from the center = saturation.
+/// Sends like SendSlider.
+struct Wheel: View {
+    let hue: Double
+    let sat: Double
+    let send: (Double, Double) -> Void
+    static let hues = (0...6).map { Color(hue: Double($0) / 6, saturation: 1, brightness: 1) }
+    @State private var drag: [Double]?
+    @State private var lastSent = Date.distantPast
+    @State private var editing = false
+
+    var body: some View {
+        let (h, s) = drag.map { ($0[0], $0[1]) } ?? (hue, min(max(sat, 0), 100))
+        VStack(alignment: .leading) {
+            Text("Color")
+            GeometryReader { g in
+                let r: Double = min(g.size.width, g.size.height) / 2
+                let c = CGPoint(x: g.size.width / 2, y: g.size.height / 2)
+                let a: Double = h * .pi / 180, d: Double = r * s / 100
+                ZStack {
+                    Circle().fill(AngularGradient(colors: Self.hues, center: .center))
+                    Circle().fill(RadialGradient(colors: [.white, .white.opacity(0)], center: .center, startRadius: 0, endRadius: r))
+                    Circle().fill(Color(hue: h / 360, saturation: s / 100, brightness: 1)).frame(width: 28, height: 28)
+                        .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(radius: 2)
+                        .position(x: c.x + cos(a) * d, y: c.y + sin(a) * d)
+                }
+                .contentShape(Circle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { e in
+                        editing = true
+                        let dx = e.location.x - c.x, dy = e.location.y - c.y
+                        let v = [(atan2(dy, dx) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360), min(hypot(dx, dy) / r, 1) * 100]
+                        drag = v
+                        if Date.now.timeIntervalSince(lastSent) >= 0.3 { lastSent = .now; send(v[0], v[1]) }
+                    }
+                    .onEnded { _ in
+                        editing = false
+                        if let d = drag { send(d[0], d[1]); lastSent = .now }
+                    })
+            }
+            .aspectRatio(1, contentMode: .fit).frame(maxWidth: 260).frame(maxWidth: .infinity).padding(.vertical, 8)
+            .accessibilityElement().accessibilityLabel("Color").accessibilityValue("Hue \(Int(h)) degrees, saturation \(Int(s)) percent")
+            .accessibilityIdentifier("wheel")
+        }
+        .onChange(of: hue) { if !editing { drag = nil } }
+        .onChange(of: sat) { if !editing { drag = nil } }
     }
 }

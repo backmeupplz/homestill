@@ -121,9 +121,11 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
 - Long-press (Android) / context-press or a small chevron (iOS: `.contextMenu` is fine, or a sheet on long press) opens
   a detail sheet for lights, fans and covers:
   - light: on/off switch; brightness slider (if `supported_color_modes` has anything other than `onoff`) →
-    `light.turn_on {"brightness_pct"}`; warmth slider if modes include `color_temp` (range `min_color_temp_kelvin`
-    …`max_color_temp_kelvin`) → `{"color_temp_kelvin"}`; hue slider if modes include any of `hs rgb rgbw rgbww xy` →
-    `{"hs_color":[h,100]}`. Sliders send on release and at most every 300 ms while dragging.
+    `light.turn_on {"brightness_pct"}`; warmth bar if modes include `color_temp` (range `min_color_temp_kelvin`
+    …`max_color_temp_kelvin`, warm on the left, drawn as an amber → white → cool-blue gradient) →
+    `{"color_temp_kelvin"}`; color wheel if modes include any of `hs rgb rgbw rgbww xy` (angle = hue, clockwise from
+    red at 3 o'clock; distance from the center = saturation; white center; a thumb in the picked color at `hs_color`;
+    tap or drag) → `{"hs_color":[h,s]}`. Sliders, bars and the wheel send on release and at most every 300 ms while dragging.
   - fan: on/off + speed slider if `supported_features & 1` → `fan.set_percentage {"percentage"}`.
   - cover: Open / Stop / Close buttons (`cover.open_cover`/`stop_cover`/`close_cover`) + position slider if
     `supported_features & 4` → `cover.set_cover_position {"position"}`.

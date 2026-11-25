@@ -25,7 +25,7 @@ struct Tile: Codable, Identifiable, Equatable {
     var minK: Int?
     var maxK: Int?
     var kelvin: Int?
-    var hue: Double?
+    var hs: [Double]?
     var picture: String?
 
     var domain: String { String(id.prefix { $0 != "." }) }
@@ -104,7 +104,7 @@ extension Ha {
                     modes: a["supported_color_modes"] as? [String], features: int("supported_features") ?? 0,
                     position: int("current_position"), percentage: int("percentage"),
                     minK: int("min_color_temp_kelvin"), maxK: int("max_color_temp_kelvin"), kelvin: int("color_temp_kelvin"),
-                    hue: (a["hs_color"] as? [NSNumber])?.first?.doubleValue, picture: a["entity_picture"] as? String)
+                    hs: (a["hs_color"] as? [NSNumber])?.map(\.doubleValue), picture: a["entity_picture"] as? String)
     }
 
     /// Home sections (Scenes, areas in registry order, Other) and the camera list.
