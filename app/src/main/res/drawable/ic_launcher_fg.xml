@@ -1,0 +1,8 @@
+<!-- Rounded house outline inside the 66 dp adaptive-icon safe zone (21..87 of 108). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineJoin="round" android:strokeLineCap="round"
+        android:pathData="M35,51 L54,35 L73,51 L73,71 Q73,75 69,75 L39,75 Q35,75 35,71 Z"/>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M48,75 L48,62 Q48,59 51,59 L57,59 Q60,59 60,62 L60,75"/>
+</vector>
