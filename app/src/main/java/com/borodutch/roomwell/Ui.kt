@@ -161,7 +161,9 @@ fun HomeScreen() {
 
 private val Amber = Color(0xFFFFB300)
 
-fun lightColor(a: JSONObject): Color = a.optJSONArray("rgb_color")?.takeIf { it.length() == 3 }?.let { Color(it.optInt(0), it.optInt(1), it.optInt(2)) } ?: Amber
+/** The light's own color; near-white (or none) → amber, so the tint stays visible on a light theme. */
+fun lightColor(a: JSONObject): Color = a.optJSONArray("rgb_color")?.takeIf { it.length() == 3 && (0..2).any { i -> it.optInt(i) < 200 } }
+    ?.let { Color(it.optInt(0), it.optInt(1), it.optInt(2)) } ?: Amber
 
 @Composable
 fun EntityTile(t: Tile, live: Boolean, onSheet: () -> Unit, onConfirm: () -> Unit) {

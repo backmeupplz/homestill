@@ -3,6 +3,8 @@ package com.borodutch.roomwell
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.graphics.BitmapFactory
+import android.os.SystemClock
+import android.util.Log
 import android.view.LayoutInflater
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
@@ -144,11 +146,12 @@ fun Live(url: String, modifier: Modifier, onFrame: () -> Unit, onError: () -> Un
                 prepare()
             }
     }
+    val started = remember(url) { SystemClock.uptimeMillis() }
     val frame by rememberUpdatedState(onFrame)
     val error by rememberUpdatedState(onError)
     DisposableEffect(player) {
         player.addListener(object : Player.Listener {
-            override fun onRenderedFirstFrame() = frame()
+            override fun onRenderedFirstFrame() { Log.i("Roomwell", "first frame ${SystemClock.uptimeMillis() - started} ms after the stream URL"); frame() }
             override fun onPlayerError(e: PlaybackException) = error()
         })
         onDispose { player.release() }

@@ -12,7 +12,7 @@ project names. No dashboards, history, sensors, automations, notifications, widg
 
 - Android: package `com.borodutch.roomwell`, minSdk 29, target/compile 36, AGP/Gradle/Kotlin versions as Spinwell.
   Dependencies: Compose BOM + ui + foundation + material3 + activity-compose (as Spinwell), `com.squareup.okhttp3:okhttp`
-  (WebSocket; Android has no platform client), `androidx.media3:media3-exoplayer` + `media3-exoplayer-hls` + `media3-ui`
+  (WebSocket; Android has no platform client; 5.3.x, since 5.5 needs compileSdk 37), `androidx.media3:media3-exoplayer` + `media3-exoplayer-hls` + `media3-ui`
   (camera video). Nothing else: `org.json` for JSON, no Retrofit/Coil/Room/serialization/ViewModel/DI. R8 on for release.
   Single activity, state in plain Kotlin objects observed by Compose (`mutableStateOf`/`mutableStateMapOf`).
   `android:usesCleartextTraffic="true"` (Home Assistant on the LAN is often plain http).
@@ -87,6 +87,7 @@ project names. No dashboards, history, sensors, automations, notifications, widg
   default-network callback, iOS `NWPathMonitor`). Each reconnect re-subscribes and refetches the three registries.
 - Debug builds only: a launch flag (`-badtoken 1` on iOS, intent extra `badtoken` on Android) that replaces the
   in-memory access token with `"x"` (future expiry) before the first connect, to exercise auth_invalid → refresh → connected.
+  Android debug builds also take an intent extra `noservice` that drops every `call_service` (for looking at a real home).
 
 ## What is shown
 
@@ -106,7 +107,7 @@ project names. No dashboards, history, sensors, automations, notifications, widg
 - Top bar: title "Home", a gear → Settings. A slim banner under it when not connected: "Connecting…" or
   "Can't reach Home Assistant" (tap retries now). While not connected tiles are dimmed and taps do nothing.
 - Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). "On"-like tiles are
-  tinted: lights by their `rgb_color` when on (fallback amber), other toggles by the accent color.
+  tinted: lights by their `rgb_color` when on (fallback amber, also for near-white colors so the tint shows on a light theme), other toggles by the accent color.
 - `unavailable`/`unknown` state (except buttons/scenes/scripts, whose state is a timestamp or `unknown` by design): dimmed,
   state text "Unavailable", not tappable.
 - Tap behavior:
@@ -134,7 +135,8 @@ project names. No dashboards, history, sensors, automations, notifications, widg
   - if `camera/capabilities` lists `hls`: `camera/stream` → play the HLS URL (iOS `AVPlayer`; Android ExoPlayer
     `HlsMediaSource`, low-latency live config, target offset ~2 s). Home Assistant serves low-latency HLS (H.264,
     1 s parts), so first frame should be ~1–2 s. While waiting, show the snapshot poster (below) or a dark placeholder
-    with a spinner. On a playback error request a new stream URL once, then show "Stream unavailable".
+    with a spinner. On a playback error request a new stream URL once, then show "Stream unavailable". If `camera/stream`
+    itself fails (the demo's still-image cameras list `hls` but answer `start_stream_failed`), use snapshots as below.
   - otherwise: refresh the snapshot every 1 s.
   - Snapshot: `<base>` + `attributes.entity_picture` (it carries a `token=` query; no auth header). It may answer 500
     (some cameras can't make stills): then there's no poster.
