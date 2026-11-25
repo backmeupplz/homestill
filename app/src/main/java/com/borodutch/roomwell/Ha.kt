@@ -176,7 +176,8 @@ object Ha {
         val b = base ?: return null
         val r = refresh ?: return null
         val (code, text) = post("$b/auth/token", FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", r).add("client_id", CLIENT_ID).build())
-        if (code == 400 || code == 401 || code == 403) { main.post { if (base == b) signOut("Your session ended. Sign in again.") }; return null }
+        if (code == 400) { // invalid_grant; anything else is a transient failure, not a sign-out
+            main.post { if (base == b) signOut("Your session ended. Sign in again.") }; return null }
         if (code != 200) throw IOException("HTTP $code")
         val t = JSONObject(text)
         access = t.getString("access_token"); expiresAt = System.currentTimeMillis() + t.optLong("expires_in", 1800) * 1000

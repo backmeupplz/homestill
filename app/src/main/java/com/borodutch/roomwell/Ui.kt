@@ -144,11 +144,11 @@ fun HomeScreen() {
     if (Ha.sections.isEmpty() && live) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No devices to show", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize().alpha(if (live) 1f else 0.6f), contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        for (s in Ha.sections) {
-            item(key = "h:" + s.title, span = { GridItemSpan(maxLineSpan) }) {
+        for ((i, s) in Ha.sections.withIndex()) {
+            item(key = "h:$i", span = { GridItemSpan(maxLineSpan) }) {
                 Text(s.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
             }
-            items(s.tiles, key = { s.title + ":" + it.id }) { t -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
+            items(s.tiles, key = { "$i:" + it.id }) { t -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
         }
     }
     sheet?.let { t -> ModalBottomSheet({ sheet = null }) { Detail(t) } }
