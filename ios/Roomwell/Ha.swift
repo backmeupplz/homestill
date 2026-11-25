@@ -311,9 +311,9 @@ extension Ha {
             let id = m["id"] as? Int ?? 0
             switch m["type"] as? String {
             case "auth_required": raw(["type": "auth", "access_token": token])
-            case "auth_invalid": throw HaError.authInvalid
+            case "auth_invalid": logger.info("auth_invalid"); throw HaError.authInvalid
             case "auth_ok":
-                conn = .connected; wasConnected = true; nextId = 0; lastPong = 0; gotStates = false; reg = nil; deviceArea = nil; areas = nil
+                logger.info("connected"); conn = .connected; wasConnected = true; nextId = 0; lastPong = 0; gotStates = false; reg = nil; deviceArea = nil; areas = nil
                 subId = send(["type": "subscribe_entities"])
                 fetchRegistries()
                 heartbeat = Task { [weak self] in

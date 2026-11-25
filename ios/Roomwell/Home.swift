@@ -48,7 +48,7 @@ struct Banner: View {
                 }
                 .font(.footnote.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.plain).background(.bar)
+            .buttonStyle(.plain).background(.bar, ignoresSafeAreaEdges: [])
         }
     }
 }
@@ -187,7 +187,7 @@ struct SendSlider: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            LabeledContent(label, value: "\(Int(drag ?? value))\(unit)")
+            LabeledContent(label, value: "\(Int((drag ?? value).rounded()))\(unit)")
             Slider(value: Binding { drag ?? min(max(value, range.lowerBound), range.upperBound) } set: { v in
                 drag = v
                 if Date.now.timeIntervalSince(lastSent) >= 0.3 { lastSent = .now; send(v) }

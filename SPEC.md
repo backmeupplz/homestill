@@ -18,8 +18,10 @@ project names. No dashboards, history, sensors, automations, notifications, widg
   `android:usesCleartextTraffic="true"` (Home Assistant on the LAN is often plain http).
 - iOS: bundle `com.borodutch.roomwell`, team `ACWP4F58HZ`, iOS 26.1+, iPhone only, Swift 5 mode, no packages.
   `URLSessionWebSocketTask`, AVKit for video, Keychain for the refresh token. Project file like Spinwell
-  (`PBXFileSystemSynchronizedRootGroup`, so new files need no pbxproj edits). Info.plist: `NSAllowsArbitraryLoads = true`,
-  `NSAllowsLocalNetworking = true`, `NSLocalNetworkUsageDescription` ("Roomwell connects to Home Assistant on your network.").
+  (`PBXFileSystemSynchronizedRootGroup`, so new files need no pbxproj edits). Info.plist: `NSAllowsArbitraryLoads = true`
+  and `NSLocalNetworkUsageDescription` ("Roomwell connects to Home Assistant on your network."). No
+  `NSAllowsLocalNetworking`: when present, iOS ignores `NSAllowsArbitraryLoads` and blocks plain http to dotted hostnames
+  (checked: `http://<mac>.<tailnet>.ts.net:8124` failed with error -1022 until the key was removed).
 - English only for now. Follows the system light/dark theme (Android: Material You dynamic color on 12+).
 
 ## Speed is the feature
@@ -134,7 +136,9 @@ project names. No dashboards, history, sensors, automations, notifications, widg
   - if `camera/capabilities` lists `hls`: `camera/stream` → play the HLS URL (iOS `AVPlayer`; Android ExoPlayer
     `HlsMediaSource`, low-latency live config, target offset ~2 s). Home Assistant serves low-latency HLS (H.264,
     1 s parts), so first frame should be ~1–2 s. While waiting, show the snapshot poster (below) or a dark placeholder
-    with a spinner. On a playback error request a new stream URL once, then show "Stream unavailable".
+    with a spinner. On a playback error request a new stream URL once, then show "Stream unavailable". If
+    `camera/stream` itself fails (the demo's cameras list `hls` but answer `start_stream_failed`), fall back to the
+    snapshot refresh below.
   - otherwise: refresh the snapshot every 1 s.
   - Snapshot: `<base>` + `attributes.entity_picture` (it carries a `token=` query; no auth header). It may answer 500
     (some cameras can't make stills): then there's no poster.
