@@ -2,6 +2,8 @@
 # Throwaway Home Assistant with the `demo` integration (lights, switches, locks, covers, fans, cameras, areas) for testing
 # controls without touching a real home. http://127.0.0.1:8124 (emulator: http://10.0.2.2:8124), user demo / demo-pass.
 # `tools/demo-ha.sh stop` removes it.
+# Never use the stock demo cameras in public screenshots: they show frames from a copyrighted cartoon. The site's shots
+# (docs/cameras.webp, 2026-11-25) swapped them for public-domain photos by patching components/demo/camera.py in the container.
 set -e
 name=homestill-demo-ha
 docker rm -f $name >/dev/null 2>&1 || true
