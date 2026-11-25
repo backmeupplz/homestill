@@ -1,0 +1,462 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		5257AA000000000000000030 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5257AA000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5257AA000000000000000010;
+			remoteInfo = Roomwell;
+		};
+		5257AA000000000000000059 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5257AA000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5257AA000000000000000010;
+			remoteInfo = Roomwell;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		5257AA000000000000000004 /* Roomwell.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Roomwell.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5257AA000000000000000005 /* RoomwellTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RoomwellTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5257AA000000000000000055 /* RoomwellUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RoomwellUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5257AA000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		5257AA000000000000000007 /* Roomwell */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Roomwell;
+			sourceTree = "<group>";
+		};
+		5257AA000000000000000008 /* RoomwellTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RoomwellTests;
+			sourceTree = "<group>";
+		};
+		5257AA000000000000000058 /* RoomwellUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RoomwellUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5257AA000000000000000012 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000022 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000052 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		5257AA000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				5257AA000000000000000006 /* Info.plist */,
+				5257AA000000000000000007 /* Roomwell */,
+				5257AA000000000000000008 /* RoomwellTests */,
+				5257AA000000000000000058 /* RoomwellUITests */,
+				5257AA000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5257AA000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5257AA000000000000000004 /* Roomwell.app */,
+				5257AA000000000000000005 /* RoomwellTests.xctest */,
+				5257AA000000000000000055 /* RoomwellUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5257AA000000000000000010 /* Roomwell */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5257AA000000000000000043 /* Build configuration list for PBXNativeTarget "Roomwell" */;
+			buildPhases = (
+				5257AA000000000000000011 /* Sources */,
+				5257AA000000000000000012 /* Frameworks */,
+				5257AA000000000000000013 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5257AA000000000000000007 /* Roomwell */,
+			);
+			name = Roomwell;
+			productName = Roomwell;
+			productReference = 5257AA000000000000000004 /* Roomwell.app */;
+			productType = "com.apple.product-type.application";
+		};
+		5257AA000000000000000020 /* RoomwellTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5257AA000000000000000046 /* Build configuration list for PBXNativeTarget "RoomwellTests" */;
+			buildPhases = (
+				5257AA000000000000000021 /* Sources */,
+				5257AA000000000000000022 /* Frameworks */,
+				5257AA000000000000000023 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5257AA000000000000000031 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				5257AA000000000000000008 /* RoomwellTests */,
+			);
+			name = RoomwellTests;
+			productName = RoomwellTests;
+			productReference = 5257AA000000000000000005 /* RoomwellTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		5257AA000000000000000050 /* RoomwellUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5257AA000000000000000056 /* Build configuration list for PBXNativeTarget "RoomwellUITests" */;
+			buildPhases = (
+				5257AA000000000000000051 /* Sources */,
+				5257AA000000000000000052 /* Frameworks */,
+				5257AA000000000000000053 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5257AA000000000000000054 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				5257AA000000000000000058 /* RoomwellUITests */,
+			);
+			name = RoomwellUITests;
+			productName = RoomwellUITests;
+			productReference = 5257AA000000000000000055 /* RoomwellUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5257AA000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					5257AA000000000000000010 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					5257AA000000000000000020 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 5257AA000000000000000010;
+					};
+					5257AA000000000000000050 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 5257AA000000000000000010;
+					};
+				};
+			};
+			buildConfigurationList = 5257AA000000000000000040 /* Build configuration list for PBXProject "Roomwell" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 5257AA000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5257AA000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5257AA000000000000000010 /* Roomwell */,
+				5257AA000000000000000020 /* RoomwellTests */,
+				5257AA000000000000000050 /* RoomwellUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5257AA000000000000000013 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000023 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000053 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5257AA000000000000000011 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000021 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5257AA000000000000000051 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5257AA000000000000000031 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5257AA000000000000000010 /* Roomwell */;
+			targetProxy = 5257AA000000000000000030 /* PBXContainerItemProxy */;
+		};
+		5257AA000000000000000054 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5257AA000000000000000010 /* Roomwell */;
+			targetProxy = 5257AA000000000000000059 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		5257AA000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5257AA000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5257AA000000000000000044 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Roomwell";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		5257AA000000000000000045 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Roomwell";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		5257AA000000000000000047 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Roomwell.app/Roomwell";
+			};
+			name = Debug;
+		};
+		5257AA000000000000000048 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Roomwell.app/Roomwell";
+			};
+			name = Release;
+		};
+		5257AA000000000000000057 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Roomwell;
+			};
+			name = Debug;
+		};
+		5257AA000000000000000060 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ACWP4F58HZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.borodutch.roomwell.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Roomwell;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5257AA000000000000000040 /* Build configuration list for PBXProject "Roomwell" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5257AA000000000000000041 /* Debug */,
+				5257AA000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5257AA000000000000000043 /* Build configuration list for PBXNativeTarget "Roomwell" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5257AA000000000000000044 /* Debug */,
+				5257AA000000000000000045 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5257AA000000000000000046 /* Build configuration list for PBXNativeTarget "RoomwellTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5257AA000000000000000047 /* Debug */,
+				5257AA000000000000000048 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5257AA000000000000000056 /* Build configuration list for PBXNativeTarget "RoomwellUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5257AA000000000000000057 /* Debug */,
+				5257AA000000000000000060 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5257AA000000000000000001 /* Project object */;
+}
