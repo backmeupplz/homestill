@@ -318,7 +318,7 @@ extension Ha {
                 fetchRegistries()
                 heartbeat = Task { [weak self] in
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(20))
+                        try? await Task.sleep(for: .seconds(10)) // + 10 s pong wait = a ping every 20 s
                         guard let self, !Task.isCancelled else { return }
                         let ping = self.send(["type": "ping"])
                         try? await Task.sleep(for: .seconds(10))

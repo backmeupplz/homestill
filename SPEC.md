@@ -108,7 +108,8 @@ project names. No dashboards, history, sensors, automations, notifications, widg
 - Top bar: title "Home", a gear → Settings. A slim banner under it when not connected: "Connecting…" or
   "Can't reach Home Assistant" (tap retries now). While not connected tiles are dimmed and taps do nothing.
 - Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). "On"-like tiles are
-  tinted: lights by their `rgb_color` when on (fallback amber), other toggles by the accent color.
+  tinted: lights by their `rgb_color` when on (fallback amber, also for near-white colors, which would vanish on a light
+  background), other toggles by the accent color.
 - `unavailable`/`unknown` state (except buttons/scenes/scripts, whose state is a timestamp or `unknown` by design): dimmed,
   state text "Unavailable", not tappable.
 - Tap behavior:
@@ -144,7 +145,7 @@ project names. No dashboards, history, sensors, automations, notifications, widg
     (some cameras can't make stills): then there's no poster.
 - Cards scrolled off screen stop their player. `unavailable` camera: dimmed card "Unavailable", no player.
 - Tap a card → full-screen live view of that camera (black background, aspect-fit, pinch to zoom, rotates to landscape,
-  close button / back). Same player logic.
+  close button / back). Same player logic. (iOS allows landscape app-wide, so Home and Cameras rotate too.)
 
 ## Settings
 
