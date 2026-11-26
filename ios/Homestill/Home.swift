@@ -3,16 +3,17 @@ import SwiftUI
 struct HomeView: View {
     @State private var detail = Hooks.string("detail").map { DetailID(id: $0) }
     @State private var settings = Hooks.string("settings") != nil
+    @State private var editing = Hooks.string("edit") != nil
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    ForEach(ha.home) { sec in
+                    ForEach(Ha.visible(ha.rooms)) { room in
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(sec.name).font(.title3.bold()).padding(.leading, 4)
+                            Text(room.name).font(.title3.bold()).padding(.leading, 4)
                             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                                ForEach(sec.tiles) { t in TileView(t: t) { detail = DetailID(id: t.id) } }
+                                ForEach(room.tiles) { p in TileView(t: p.t) { detail = DetailID(id: p.id) } }
                             }
                         }
                     }
@@ -24,8 +25,12 @@ struct HomeView: View {
             .overlay { if ha.home.isEmpty && ha.connected { ContentUnavailableView("No devices", systemImage: "house") } }
             .safeAreaInset(edge: .top, spacing: 0) { Banner() }
             .navigationTitle("Home")
-            .toolbar { Button("Settings", systemImage: "gearshape") { settings = true } }
+            .toolbar {
+                Button("Edit home", systemImage: "pencil") { editing = true }
+                Button("Settings", systemImage: "gearshape") { settings = true }
+            }
             .sheet(isPresented: $settings) { SettingsView() }
+            .fullScreenCover(isPresented: $editing) { EditHome() }
             .sheet(item: $detail) { d in
                 // the color wheel, the long media/climate sheets and the alarm's number pad need the full height
                 let t = ha.tile(d.id)
@@ -42,6 +47,109 @@ struct HomeView: View {
 }
 
 struct DetailID: Identifiable { var id: String }
+
+/// "Edit home" (SPEC "Customizing Home"): one flat list of room headers and tile rows, so a tile can be dragged across
+/// rooms; every move also works from the tile's menu. Draws from `ha.rooms`, saves on every change.
+struct EditHome: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var askReset = false
+
+    private struct Row: Identifiable { var id: String; var room: Room; var tile: Placed? }
+
+    var body: some View {
+        let rooms = ha.rooms
+        let rows = rooms.flatMap { r in [Row(id: "#" + r.key, room: r)] + r.tiles.map { Row(id: $0.id, room: r, tile: $0) } }
+        NavigationStack {
+            List {
+                ForEach(rows) { row in
+                    if let p = row.tile { tileRow(p, in: row.room, rooms) } else { header(row.room, rooms).moveDisabled(true) }
+                }
+                .onMove { from, to in drop(rows, from, to) }
+            }
+            .environment(\.editMode, .constant(.active))
+            .accessibilityIdentifier("editor")
+            .navigationTitle("Edit home").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu("More", systemImage: "ellipsis") { Button("Reset Home layout", role: .destructive) { askReset = true } }
+                }
+            }
+            .alert("Reset?", isPresented: $askReset) {
+                Button("Reset", role: .destructive) { ha.resetLayout() }
+                Button("Cancel", role: .cancel) {}
+            }
+        }
+    }
+
+    private func header(_ r: Room, _ rooms: [Room]) -> some View {
+        let i = rooms.firstIndex { $0.key == r.key } ?? 0
+        return HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.name).font(.headline)
+                if r.hidden { Text("Hidden").font(.caption).foregroundStyle(.secondary) }
+            }
+            .opacity(r.hidden ? 0.45 : 1)
+            Spacer()
+            Button("Move up", systemImage: "chevron.up") { ha.edit { $0.moveRoom(r.key, to: i - 1, ha.home) } }.disabled(i == 0)
+            Button("Move down", systemImage: "chevron.down") { ha.edit { $0.moveRoom(r.key, to: i + 1, ha.home) } }
+                .disabled(i == rooms.count - 1)
+            eye(hidden: r.hidden, id: r.key) { $0.toggle(\.hiddenRooms, r.key) }
+        }
+        .labelStyle(.iconOnly).buttonStyle(.borderless)
+        .listRowBackground(Color.clear)
+    }
+
+    private func tileRow(_ p: Placed, in r: Room, _ rooms: [Room]) -> some View {
+        let i = r.tiles.firstIndex { $0.id == p.id } ?? 0
+        return HStack(spacing: 12) {
+            Menu {
+                Button("Move up", systemImage: "arrow.up") { ha.edit { $0.moveTile(p.id, to: r.key, at: i - 1, ha.home) } }.disabled(i == 0)
+                Button("Move down", systemImage: "arrow.down") { ha.edit { $0.moveTile(p.id, to: r.key, at: i + 1, ha.home) } }
+                    .disabled(i == r.tiles.count - 1)
+                Menu("Move to room…", systemImage: "arrow.right") {
+                    ForEach(rooms) { to in
+                        Button(to.name) { ha.edit { $0.moveTile(p.id, to: to.key, at: to.tiles.count, ha.home) } }.disabled(to.key == r.key)
+                    }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: TileView.icon(p.t)).foregroundStyle(.secondary).frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(p.t.name).foregroundStyle(.primary)
+                        if p.hidden { Text("Hidden").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Spacer()
+                }
+                .contentShape(.rect)
+            }
+            .tint(.primary) // a row, not a tinted button
+            .opacity(p.hidden ? 0.45 : 1)
+            .accessibilityIdentifier("edit " + p.id)
+            eye(hidden: p.hidden, id: p.id) { $0.toggle(\.hidden, p.id) }
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func eye(hidden: Bool, id: String, _ change: @escaping (inout Layout) -> Void) -> some View {
+        Button(hidden ? "Show" : "Hide", systemImage: hidden ? "eye.slash" : "eye") { ha.edit(change) }
+            .labelStyle(.iconOnly).foregroundStyle(hidden ? .secondary : .primary)
+            .accessibilityIdentifier("eye " + id)
+    }
+
+    /// A dragged tile lands in the room whose header is above it (dropped above the first header: the first room).
+    private func drop(_ rows: [Row], _ from: IndexSet, _ to: Int) {
+        guard let id = from.first.flatMap({ rows[$0].tile?.id }) else { return }
+        var r = rows
+        r.move(fromOffsets: from, toOffset: to)
+        guard let at = r.firstIndex(where: { $0.id == id }) else { return }
+        if let h = r[..<at].lastIndex(where: { $0.tile == nil }) {
+            ha.edit { $0.moveTile(id, to: r[h].room.key, at: at - h - 1, ha.home) }
+        } else if let first = rows.first {
+            ha.edit { $0.moveTile(id, to: first.room.key, at: 0, ha.home) }
+        }
+    }
+}
 
 /// "Connecting…" / "Can't reach Home Assistant" (tap retries) while not connected.
 struct Banner: View {

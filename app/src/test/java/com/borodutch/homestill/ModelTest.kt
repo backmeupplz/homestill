@@ -49,6 +49,8 @@ class ModelTest {
         val areas = parseAreas(JSONArray("""[{"area_id":"kitchen","name":"Kitchen"},{"area_id":"living_room","name":"Living Room"},{"area_id":"empty","name":"Empty"}]"""))
         val home = buildHome(m, reg, dev, areas)
         assertEquals(listOf("Scenes", "Kitchen", "Living Room", "Other"), home.map { it.title })
+        assertEquals(listOf("scenes", "area:kitchen", "area:living_room", "other"), home.map { it.key })
+        assertEquals("Living Room Lights", home[2].tiles[0].full)
         assertEquals(listOf("Night"), home[0].tiles.map { it.name })
         assertEquals(listOf("switch.dev"), home[1].tiles.map { it.id }) // via device; hidden + config skipped
         assertEquals(listOf("Lights", "living room", "Movie"), home[2].tiles.map { it.name }) // prefix stripped only when something is left
@@ -76,7 +78,7 @@ class ModelTest {
         assertEquals(listOf("Kitchen", "Other"), home.map { it.title })
         // controls first (by name), then readings (by name); unavailable, unknown and timestamp readings skipped
         assertEquals(listOf("climate.ac", "switch.z", "binary_sensor.door", "select.mode", "sensor.temp"), home[0].tiles.map { it.id })
-        assertEquals(Tile("sensor.temp", "Temperature", 1), home[0].tiles.last())
+        assertEquals(Tile("sensor.temp", "Temperature", 1, "Kitchen Temperature"), home[0].tiles.last())
         assertEquals(listOf("media_player.tv"), home[1].tiles.map { it.id }) // area-less readings never go to Other
     }
 

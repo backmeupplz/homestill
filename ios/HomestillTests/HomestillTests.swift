@@ -260,4 +260,108 @@ import XCTest
             }
         }
     }
+
+    // MARK: Customizing Home (SPEC test vectors)
+
+    let sections: [Homestill.Section] = {
+        typealias S = Homestill.Section
+        func t(_ id: String, _ name: String, full: String? = nil) -> Tile { Tile(id: id, name: name, s: "on", full: full ?? name) }
+        let a: [Tile] = [t("light.a1", "One"), t("light.a2", "Two"), t("light.a4", "Four"), t("sensor.a3", "Three")]
+        return [
+            S(key: "scenes", name: "Scenes", tiles: [t("scene.s", "S")]),
+            S(key: "area:a", name: "A", tiles: a),
+            S(key: "area:b", name: "B", tiles: [t("light.b1", "Lamp", full: "B Lamp")]),
+            S(key: "other", name: "Other", tiles: [t("switch.o", "O")]),
+        ]
+    }()
+
+    /// "A[a1 a2] B[]" with ids short of their domain.
+    func show(_ rooms: [Room]) -> String {
+        rooms.map { r in "\(r.name)[\(r.tiles.map { String($0.id.split(separator: ".")[1]) }.joined(separator: " "))]" }.joined(separator: " ")
+    }
+    func arranged(_ json: String?) -> [Room] { Ha.arrange(sections, Layout.parse(json)) }
+    func room(_ rooms: [Room], _ key: String) -> Room { rooms.first { $0.key == key }! }
+
+    func testArrangeVectors() {
+        XCTAssertEqual(show(arranged(nil)), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]")
+        XCTAssertEqual(show(arranged("{}")), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]")
+        XCTAssertEqual(show(arranged(#"{"order":["area:b"]}"#)), "B[b1] Scenes[s] A[a1 a2 a4 a3] Other[o]")
+        XCTAssertEqual(show(arranged(#"{"tiles":{"area:a":["light.a2","light.a1"]}}"#)), "Scenes[s] A[a2 a1 a4 a3] B[b1] Other[o]")
+        XCTAssertEqual(show(arranged(#"{"tiles":{"area:a":["sensor.zz","light.a1"]}}"#)), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]")
+
+        let moved = arranged(#"{"moved":{"light.b1":"area:a"},"tiles":{"area:a":["light.a1","light.b1"]}}"#)
+        XCTAssertEqual(show(moved), "Scenes[s] A[a1 b1 a2 a4 a3] B[] Other[o]")
+        XCTAssertEqual(room(moved, "area:a").tiles.map(\.moved), [false, true, false, false, false])
+        XCTAssertEqual(room(moved, "area:a").tiles[1].t.name, "B Lamp", "a moved tile shows its full name")
+        XCTAssertEqual(room(moved, "area:a").tiles[0].t.name, "One")
+        XCTAssertEqual(show(Ha.visible(moved)), "Scenes[s] A[a1 b1 a2 a4 a3] Other[o]", "B has no tiles: not on Home")
+
+        let gone = arranged(#"{"moved":{"light.a1":"area:gone"}}"#)
+        XCTAssertEqual(show(gone), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]")
+        XCTAssertFalse(room(gone, "area:a").tiles[0].moved)
+        XCTAssertEqual(room(gone, "area:a").tiles[0].t.name, "One")
+
+        let hidden = arranged(#"{"hidden":["light.a2"],"hiddenRooms":["other"]}"#)
+        XCTAssertEqual(show(Ha.visible(hidden)), "Scenes[s] A[a1 a4 a3] B[b1]")
+        XCTAssertEqual(show(hidden), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]", "the editor lists hidden ones")
+        XCTAssertEqual(room(hidden, "area:a").tiles.filter(\.hidden).map(\.id), ["light.a2"])
+        XCTAssertEqual(hidden.filter(\.hidden).map(\.key), ["other"])
+
+        XCTAssertEqual(show(arranged(#"{"order":["zz","area:a"]}"#)), "A[a1 a2 a4 a3] Scenes[s] B[b1] Other[o]")
+    }
+
+    func testBrokenLayoutIsTheDefault() {
+        XCTAssertEqual(Layout.parse("not json"), Layout())
+        XCTAssertEqual(Layout.parse(#"{"order":5}"#), Layout())
+        XCTAssertEqual(Layout.parse(#"{"order":["area:b"],"future":1}"#), Layout(order: ["area:b"]))
+    }
+
+    func testSavingEditsTheStoredLayout() {
+        // a move in A keeps the not-current sensor.zz at the end
+        var l = Layout.parse(#"{"tiles":{"area:a":["sensor.zz","light.a1"]}}"#)
+        l.moveTile("light.a4", to: "area:a", at: 0, sections)
+        XCTAssertEqual(l.tiles["area:a"], ["light.a4", "light.a1", "light.a2", "sensor.a3", "sensor.zz"])
+        XCTAssertEqual(l.moved, [:])
+        XCTAssertEqual(show(Ha.arrange(sections, l)), "Scenes[s] A[a4 a1 a2 a3] B[b1] Other[o]")
+
+        // moving a room keeps the not-current order keys at the end
+        l = Layout.parse(#"{"order":["zz","area:a"]}"#)
+        l.moveRoom("area:b", to: 0, sections)
+        XCTAssertEqual(l.order, ["area:b", "area:a", "scenes", "other", "zz"])
+
+        // to another room and back: `moved` only holds tiles out of their own room
+        l = Layout()
+        l.moveTile("light.b1", to: "area:a", at: 1, sections)
+        XCTAssertEqual(l.moved, ["light.b1": "area:a"])
+        XCTAssertEqual(l.tiles["area:a"], ["light.a1", "light.b1", "light.a2", "light.a4", "sensor.a3"])
+        XCTAssertEqual(show(Ha.arrange(sections, l)), "Scenes[s] A[a1 b1 a2 a4 a3] B[] Other[o]")
+        l.moveTile("light.b1", to: "area:b", at: 0, sections)
+        XCTAssertEqual(l.moved, [:])
+        XCTAssertEqual(show(Ha.arrange(sections, l)), "Scenes[s] A[a1 a2 a4 a3] B[b1] Other[o]")
+        l.moveTile("light.b1", to: "area:gone", at: 0, sections)
+        XCTAssertEqual(l.moved, [:], "never moves to a room that isn't there")
+
+        // eye toggles
+        l = Layout()
+        l.toggle(\.hidden, "light.a2"); l.toggle(\.hiddenRooms, "other")
+        XCTAssertEqual(l, Layout(hiddenRooms: ["other"], hidden: ["light.a2"]))
+        l.toggle(\.hidden, "light.a2")
+        XCTAssertEqual(l.hidden, [])
+
+        // what is stored reads back the same
+        l = Layout(order: ["area:b"], tiles: ["area:a": ["light.a2"]], moved: ["light.b1": "area:a"])
+        XCTAssertEqual(Layout.parse(String(decoding: try! JSONEncoder().encode(l), as: UTF8.self)), l)
+    }
+
+    func testSnapshotKeysAndOldCache() throws {
+        let (home, _) = Ha.build(states: ["light.x": e("on", ["friendly_name": "Garage X"]), "scene.s": e("2026-01-01")],
+                                 reg: ["light.x": Reg(area: "other")], deviceArea: [:], areas: [("other", "Garage")])
+        XCTAssertEqual(home.map(\.key), ["scenes", "area:other"], "an area whose id is \"other\" stays area:other")
+        XCTAssertEqual(home[1].tiles[0].name, "X")
+        XCTAssertEqual(home[1].tiles[0].full, "Garage X")
+        let snap = Ha.Snapshot(home: home, cameras: [])
+        XCTAssertEqual(try JSONDecoder().decode(Ha.Snapshot.self, from: JSONEncoder().encode(snap)).home, home)
+        let old = #"{"home":[{"id":"kitchen","name":"Kitchen","tiles":[{"id":"light.k","name":"K","s":"on","a":{}}]}],"cameras":[]}"#
+        XCTAssertNil(try? JSONDecoder().decode(Ha.Snapshot.self, from: Data(old.utf8)), "a cache from before keys is ignored")
+    }
 }

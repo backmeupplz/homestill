@@ -64,6 +64,9 @@ struct Tile: Codable, Identifiable, Equatable {
     var dp: Int?
     /// Cameras: the `onvif` entity that pans/tilts this camera.
     var ptz: String?
+    /// `friendly_name` as sent (`name` drops the area prefix); shown when the tile is moved to another room.
+    /// Required in the cache: a file from before it existed doesn't decode (SPEC "Snapshot cache").
+    var full = ""
 
     var domain: String { String(id.prefix { $0 != "." }) }
     /// Buttons, scenes and scripts carry a timestamp or `unknown` as state by design.
@@ -89,7 +92,57 @@ struct Tile: Codable, Identifiable, Equatable {
     var picture: String? { str("entity_picture") }
 }
 
-struct Section: Codable, Identifiable, Equatable { var id: String; var name: String; var tiles: [Tile] }
+/// A Home section as Home Assistant arranges it. `key`: `area:<area_id>`, `scenes` or `other`.
+struct Section: Codable, Identifiable, Equatable { var key: String; var name: String; var tiles: [Tile]; var id: String { key } }
+
+/// The user's Home changes (SPEC "Customizing Home"), stored as JSON; every field is optional in the JSON.
+struct Layout: Codable, Equatable {
+    var order: [String] = []
+    var hiddenRooms: [String] = []
+    var tiles: [String: [String]] = [:]
+    var moved: [String: String] = [:]
+    var hidden: [String] = []
+
+    /// Moves tile `id` to position `i` of room `r` (its own room or another). The room it left needs no change.
+    mutating func moveTile(_ id: String, to r: String, at i: Int, _ sections: [Section]) {
+        guard sections.contains(where: { $0.key == r }) else { return }
+        var ids = (Ha.arrange(sections, self).first { $0.key == r }?.tiles.map(\.id) ?? []).filter { $0 != id }
+        ids.insert(id, at: min(max(i, 0), ids.count))
+        let current = Set(sections.flatMap { $0.tiles.map(\.id) })
+        moved[id] = sections.first { $0.tiles.contains { $0.id == id } }?.key == r ? nil : r
+        tiles[r] = ids + (tiles[r] ?? []).filter { !current.contains($0) && !ids.contains($0) }
+    }
+
+    mutating func moveRoom(_ key: String, to i: Int, _ sections: [Section]) {
+        var keys = Ha.arrange(sections, self).map(\.key).filter { $0 != key }
+        keys.insert(key, at: min(max(i, 0), keys.count))
+        let current = Set(sections.map(\.key))
+        order = keys + order.filter { !current.contains($0) }
+    }
+
+    /// Eye toggles: `\.hidden` (tiles) or `\.hiddenRooms`.
+    mutating func toggle(_ list: WritableKeyPath<Layout, [String]>, _ id: String) {
+        if self[keyPath: list].contains(id) { self[keyPath: list].removeAll { $0 == id } } else { self[keyPath: list].append(id) }
+    }
+
+    /// The stored JSON; missing or broken = the default Home.
+    static func parse(_ s: String?) -> Layout { s.flatMap { try? JSONDecoder().decode(Layout.self, from: Data($0.utf8)) } ?? Layout() }
+}
+
+extension Layout {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        order = try c.decodeIfPresent([String].self, forKey: .order) ?? []
+        hiddenRooms = try c.decodeIfPresent([String].self, forKey: .hiddenRooms) ?? []
+        tiles = try c.decodeIfPresent([String: [String]].self, forKey: .tiles) ?? [:]
+        moved = try c.decodeIfPresent([String: String].self, forKey: .moved) ?? [:]
+        hidden = try c.decodeIfPresent([String].self, forKey: .hidden) ?? []
+    }
+}
+
+/// A room as drawn: a section with the layout applied. `hidden` rooms and tiles are still listed (the editor shows them).
+struct Room: Identifiable, Equatable { var key: String; var name: String; var hidden: Bool; var tiles: [Placed]; var id: String { key } }
+struct Placed: Identifiable, Equatable { var t: Tile; var hidden = false; var moved = false; var id: String { t.id } }
 
 /// The registry facts we use about an entity.
 struct Reg: Equatable {
@@ -165,7 +218,36 @@ extension Ha {
     }
 
     static func tile(_ id: String, _ e: Entity, area: String?) -> Tile {
-        Tile(id: id, name: displayName(e.a["friendly_name"]?.str ?? id, area: area), s: e.s, a: e.a)
+        let full = e.a["friendly_name"]?.str ?? id
+        return Tile(id: id, name: displayName(full, area: area), s: e.s, a: e.a, full: full)
+    }
+
+    /// The layout on top of Home Assistant's sections (SPEC "Customizing Home"): every room and tile, hidden ones flagged.
+    nonisolated static func arrange(_ sections: [Section], _ l: Layout) -> [Room] {
+        let keys = Set(sections.map(\.key)), hidden = Set(l.hidden), hiddenRooms = Set(l.hiddenRooms)
+        var land: [String: [Placed]] = [:] // per room, in default order
+        for s in sections {
+            for var t in s.tiles {
+                let to = l.moved[t.id].flatMap { keys.contains($0) ? $0 : nil } ?? s.key
+                if to != s.key { t.name = t.full }
+                land[to, default: []].append(Placed(t: t, hidden: hidden.contains(t.id), moved: to != s.key))
+            }
+        }
+        var seen = Set<String>()
+        let order = (l.order.filter(keys.contains) + sections.map(\.key)).filter { seen.insert($0).inserted }
+        let names = Dictionary(sections.map { ($0.key, $0.name) }) { a, _ in a }
+        return order.map { k in
+            var rank: [String: Int] = [:]
+            for (i, id) in (l.tiles[k] ?? []).enumerated() where rank[id] == nil { rank[id] = i }
+            let tiles = (land[k] ?? []).enumerated()
+                .sorted { (rank[$0.element.id] ?? .max, $0.offset) < (rank[$1.element.id] ?? .max, $1.offset) }.map(\.element)
+            return Room(key: k, name: names[k] ?? k, hidden: hiddenRooms.contains(k), tiles: tiles)
+        }
+    }
+
+    /// What Home draws: rooms that aren't hidden, with their tiles that aren't; a room left empty isn't drawn.
+    static func visible(_ rooms: [Room]) -> [Room] {
+        rooms.filter { !$0.hidden }.map { var r = $0; r.tiles.removeAll(where: \.hidden); return r }.filter { !$0.tiles.isEmpty }
     }
 
     /// Home sections (Scenes, areas in registry order, Other) and the camera list.
@@ -209,9 +291,9 @@ extension Ha {
             t.sorted { $0.reading != $1.reading ? !$0.reading : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         }
         var home: [Section] = []
-        if !scenes.isEmpty { home.append(Section(id: "~scenes", name: "Scenes", tiles: sorted(scenes))) }
-        for a in areas { if let t = inArea[a.id] { home.append(Section(id: a.id, name: a.name, tiles: sorted(t))) } }
-        if !other.isEmpty { home.append(Section(id: "~other", name: "Other", tiles: sorted(other))) }
+        if !scenes.isEmpty { home.append(Section(key: "scenes", name: "Scenes", tiles: sorted(scenes))) }
+        for a in areas { if let t = inArea[a.id] { home.append(Section(key: "area:" + a.id, name: a.name, tiles: sorted(t))) } }
+        if !other.isEmpty { home.append(Section(key: "other", name: "Other", tiles: sorted(other))) }
         return (home, sorted(cams))
     }
 
@@ -352,7 +434,10 @@ extension Ha {
     @ObservationIgnored var expiry = Date.distantPast
 
     var conn = Conn.connecting
+    /// Sections as Home Assistant arranges them (also what the snapshot holds); `rooms` applies the layout.
     var home: [Section] = []
+    private(set) var layout = Layout.parse(UserDefaults.standard.string(forKey: "layout"))
+    var rooms: [Room] { Self.arrange(home, layout) }
     var cameras: [Tile] = []
     var userName: String?
     var signInMessage: String?
@@ -405,8 +490,19 @@ extension Ha {
     }
 
     func tile(_ id: String) -> Tile? {
-        for s in home { if let t = s.tiles.first(where: { $0.id == id }) { return t } }
+        for r in rooms { if let p = r.tiles.first(where: { $0.id == id }) { return p.t } } // a moved tile's full name
         return cameras.first { $0.id == id }
+    }
+
+    /// Applies an editor change and saves it at once (it never leaves the phone).
+    func edit(_ change: (inout Layout) -> Void) {
+        change(&layout)
+        if let d = try? JSONEncoder().encode(layout) { UserDefaults.standard.set(String(decoding: d, as: UTF8.self), forKey: "layout") }
+    }
+
+    func resetLayout() {
+        layout = Layout()
+        UserDefaults.standard.removeObject(forKey: "layout")
     }
 
     // MARK: Connection lifecycle
@@ -441,9 +537,9 @@ extension Ha {
             do {
                 try await session()
             } catch HaError.signedOut {
-                signOut(message: HaError.signedOut.errorDescription, revoke: false); return
+                signOut(revoke: false, ended: true); return
             } catch HaError.authInvalid {
-                if retriedAuth { signOut(message: HaError.signedOut.errorDescription, revoke: false); return }
+                if retriedAuth { signOut(revoke: false, ended: true); return }
                 retriedAuth = true; access = nil // refresh and retry once, right away
                 continue
             } catch {
@@ -691,8 +787,8 @@ extension Ha {
         } catch { signInMessage = error.localizedDescription }
     }
 
-    /// Revokes the refresh token (best effort), wipes storage and caches.
-    func signOut(message: String? = nil, revoke: Bool = true) {
+    /// Revokes the refresh token (best effort), wipes storage and caches. A session that `ended` keeps the Home layout.
+    func signOut(revoke: Bool = true, ended: Bool = false) {
         let (b, r) = (base, refresh)
         if revoke, let b, let r {
             Task {
@@ -705,9 +801,10 @@ extension Ha {
         base = nil; refresh = nil; access = nil; expiry = .distantPast
         states = [:]; reg = nil; deviceArea = nil; areas = nil; gotStates = false; pending = [:]
         home = []; cameras = []; userName = nil; unlockAsk = nil
-        conn = .connecting; needsCode = false; signInMessage = message
+        conn = .connecting; needsCode = false; signInMessage = ended ? HaError.signedOut.errorDescription : nil
         Self.saveKeychain(nil)
         try? FileManager.default.removeItem(at: Self.snapshotURL)
+        if !ended { resetLayout() }
     }
 
     // MARK: HTTP

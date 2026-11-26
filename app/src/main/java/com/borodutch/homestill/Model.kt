@@ -71,9 +71,10 @@ fun parseEntityReg(r: JSONObject): Map<String, Reg> {
 fun parseDevices(r: JSONArray): Map<String, String?> = (0 until r.length()).associate { r.getJSONObject(it).let { d -> d.getString("id") to d.str("area_id") } }
 fun parseAreas(r: JSONArray): List<Pair<String, String>> = (0 until r.length()).map { r.getJSONObject(it).let { a -> a.getString("area_id") to a.getString("name") } }
 
-/** [dp] = the registry's display precision, for sensors. */
-data class Tile(val id: String, val name: String, val dp: Int? = null)
-data class Section(val title: String, val tiles: List<Tile>)
+/** [name] = shown in its own section (area prefix dropped), [full] = the friendly name, shown when moved to another room. [dp] = sensor display precision. */
+data class Tile(val id: String, val name: String, val dp: Int? = null, val full: String = name)
+/** [key] = `area:<area_id>`, `scenes` or `other`: identifies a room everywhere (layout, list keys). */
+data class Section(val key: String, val title: String, val tiles: List<Tile>)
 
 fun entName(id: String, e: Ent?) = e?.a?.str("friendly_name")?.takeIf { it.isNotBlank() } ?: id
 
@@ -100,14 +101,78 @@ fun buildHome(ents: Map<String, Ent>, reg: Map<String, Reg>, devArea: Map<String
         if (d !in HOME_DOMAINS || r?.skip == true) continue
         val area = areaOf(r, devArea, names)
         if (d in READINGS && (area == null || unavailable(d, e.s) || (d == "sensor" && e.a.str("device_class") == "timestamp"))) continue
-        val tile = Tile(id, stripArea(entName(id, e), names[area]), r?.dp?.takeIf { d == "sensor" })
+        val full = entName(id, e)
+        val tile = Tile(id, stripArea(full, names[area]), r?.dp?.takeIf { d == "sensor" }, full)
         if (area == null && (d == "scene" || d == "script")) scenes += tile else byArea.getOrPut(area) { mutableListOf() } += tile
     }
     return buildList {
-        if (scenes.isNotEmpty()) add(Section("Scenes", scenes.sortedWith(byName)))
-        for ((id, name) in areas) byArea[id]?.let { add(Section(name, it.sortedWith(controlsFirst))) }
-        byArea[null]?.let { add(Section("Other", it.sortedWith(byName))) }
+        if (scenes.isNotEmpty()) add(Section("scenes", "Scenes", scenes.sortedWith(byName)))
+        for ((id, name) in areas) byArea[id]?.let { add(Section("area:$id", name, it.sortedWith(controlsFirst))) }
+        byArea[null]?.let { add(Section("other", "Other", it.sortedWith(byName))) }
     }
+}
+
+// ---- Home layout (SPEC "Customizing Home"): only the user's changes, applied on top of the sections ----
+
+/** A tile as placed by the layout; a moved tile's [t] carries its full name. */
+data class Spot(val t: Tile, val hidden: Boolean, val moved: Boolean)
+data class Room(val key: String, val title: String, val hidden: Boolean, val tiles: List<Spot>)
+
+/** The sections with the layout applied; every room and tile, hidden ones flagged. Never throws on a malformed layout. */
+fun arrange(sections: List<Section>, layout: JSONObject?): List<Room> {
+    val l = layout ?: JSONObject()
+    val keys = sections.map { it.key }.toSet()
+    val moved = l.optJSONObject("moved")
+    val tiles = l.optJSONObject("tiles")
+    val hidden = l.strings("hidden").toSet()
+    val hiddenRooms = l.strings("hiddenRooms").toSet()
+    // (tile, own section key) in default order, each with the room it lands in (rule 1)
+    val all = sections.flatMap { s -> s.tiles.map { Triple(it, s.key, moved?.str(it.id)?.takeIf { k -> k in keys } ?: s.key) } }
+    val order = l.strings("order").filter { it in keys }.distinct()
+    return (order + sections.map { it.key }.filter { it !in order }).map { k ->
+        val here = all.filter { it.third == k }
+        val pinned = tiles?.strings(k).orEmpty().distinct().mapNotNull { id -> here.firstOrNull { it.first.id == id } }
+        Room(k, sections.first { it.key == k }.title, k in hiddenRooms, (pinned + (here - pinned.toSet())).map { (t, own) ->
+            Spot(if (own != k) t.copy(name = t.full) else t, t.id in hidden, own != k)
+        })
+    }
+}
+
+/** What Home draws: rooms not hidden, with their tiles not hidden; a room left empty is dropped. */
+fun homeRooms(rooms: List<Room>) = rooms.filter { !it.hidden }.map { r -> r.copy(tiles = r.tiles.filter { !it.hidden }) }.filter { it.tiles.isNotEmpty() }
+
+private fun copy(l: JSONObject?) = if (l == null) JSONObject() else JSONObject(l.toString())
+
+/** Saves tile [id] at [index] in room [to] (also a move within its room). Ids in the old `tiles[to]` that are not current stay at the end. */
+fun moveTile(layout: JSONObject?, sections: List<Section>, id: String, to: String, index: Int): JSONObject {
+    val l = copy(layout)
+    val own = sections.firstOrNull { s -> s.tiles.any { it.id == id } }?.key ?: return l
+    val current = sections.flatMap { s -> s.tiles.map { it.id } }.toSet()
+    val ids = arrange(sections, l).firstOrNull { it.key == to }?.tiles?.map { it.t.id }.orEmpty().filter { it != id }.toMutableList()
+    ids.add(index.coerceIn(0, ids.size), id)
+    val tiles = l.optJSONObject("tiles") ?: JSONObject()
+    tiles.put(to, JSONArray(ids + tiles.strings(to).filter { it !in current }))
+    l.put("tiles", tiles)
+    val moved = l.optJSONObject("moved") ?: JSONObject()
+    if (to == own) moved.remove(id) else moved.put(id, to)
+    l.put("moved", moved)
+    return l
+}
+
+/** Saves room [key] at [index]: `order` = every current room key in the new order, then the old keys that are not current. */
+fun moveRoom(layout: JSONObject?, sections: List<Section>, key: String, index: Int): JSONObject {
+    val l = copy(layout)
+    val keys = arrange(sections, l).map { it.key }.filter { it != key }.toMutableList()
+    keys.add(index.coerceIn(0, keys.size), key)
+    val current = sections.map { it.key }.toSet()
+    return l.put("order", JSONArray(keys + l.strings("order").filter { it !in current }))
+}
+
+/** The eye toggle: adds [id] to (or removes it from) [field], `hidden` or `hiddenRooms`. */
+fun toggleHidden(layout: JSONObject?, field: String, id: String): JSONObject {
+    val l = copy(layout)
+    val list = l.strings(field)
+    return l.put(field, JSONArray(if (id in list) list.filter { it != id } else list + id))
 }
 
 fun buildCameras(ents: Map<String, Ent>, reg: Map<String, Reg>): List<Tile> =

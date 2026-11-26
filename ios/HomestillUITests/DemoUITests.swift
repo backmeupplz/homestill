@@ -81,6 +81,55 @@ final class DemoUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Tilt up"].exists)
     }
 
+    /// Edit home without dragging: the eye hides a tile, the row menu moves one, Reset brings Home back.
+    func testEditHome() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass"]
+        app.launch()
+        let tile = app.descendants(matching: .any)["switch.decorative_lights"]
+        XCTAssertTrue(tile.waitForExistence(timeout: 20))
+        app.buttons["Edit home"].tap()
+        let eye = app.buttons["eye switch.decorative_lights"]
+        XCTAssertTrue(eye.waitForExistence(timeout: 5))
+        eye.tap()
+        XCTAssertTrue(app.buttons["eye switch.decorative_lights"].label == "Show")
+        app.buttons["edit light.ceiling_lights"].tap()
+        app.buttons["Move to room…"].tap()
+        app.buttons["Kitchen"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(tile.waitForNonExistence(timeout: 5), "hidden on Home")
+        app.terminate()
+        app.launchArguments = [] // still signed in: the saved layout comes back
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["sensor.outside_humidity"].waitForExistence(timeout: 20))
+        XCTAssertFalse(tile.exists, "still hidden after a relaunch")
+        let moved = app.descendants(matching: .any)["light.ceiling_lights"].firstMatch
+        for _ in 0..<6 where !moved.exists { app.swipeUp() } // now in the Kitchen, further down
+        XCTAssertTrue(moved.exists)
+        app.swipeDown(velocity: .fast); app.swipeDown(velocity: .fast); app.swipeDown(velocity: .fast)
+
+        app.buttons["Edit home"].tap()
+        app.buttons["More"].tap()
+        app.buttons["Reset Home layout"].tap()
+        app.alerts["Reset?"].buttons["Reset"].tap()
+
+        // drag Fan's handle from the Living Room onto the Kitchen's second row: it lands in the Kitchen
+        let editor = app.collectionViews["editor"]
+        let fan = editor.staticTexts["Fan"], kitchen = editor.staticTexts["Kitchen"]
+        XCTAssertLessThan(fan.frame.minY, kitchen.frame.minY)
+        let handle = editor.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reorder' AND label CONTAINS 'Fan'")).firstMatch
+        handle.press(forDuration: 0.6, thenDragTo: editor.staticTexts["Demo Water Heater"]) // the Kitchen's first tile
+        let movedFan = editor.staticTexts["Living Room Fan"] // a moved tile shows its full name
+        XCTAssertTrue(movedFan.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(movedFan.frame.minY, kitchen.frame.minY, "Fan is under the Kitchen header")
+        app.buttons["More"].tap()
+        app.buttons["Reset Home layout"].tap()
+        app.alerts["Reset?"].buttons["Reset"].tap()
+
+        app.buttons["Done"].tap()
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "back after Reset")
+    }
+
     func testTapAndScroll() {
         let app = XCUIApplication()
         app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass"]

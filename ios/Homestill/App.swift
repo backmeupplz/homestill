@@ -127,7 +127,7 @@ struct SettingsView: View {
 
 /// Launch arguments for driving the app without taps (Debug only; Release ignores them):
 /// `-signout 1`, `-server URL -user U -pass P` (when signed out), `-badtoken 1`, `-noconnect 1` (draw the cache only),
-/// `-tab cameras`, `-settings 1`, `-detail <entity_id>`, `-camera <entity_id>` (full screen),
+/// `-tab cameras`, `-settings 1`, `-edit 1` (Edit home), `-detail <entity_id>`, `-camera <entity_id>` (full screen),
 /// `-tap <entity_id>` (taps a tile once synced; refused unless the server is localhost, so never on a real home).
 @MainActor enum Hooks {
 #if !DEBUG
@@ -140,7 +140,7 @@ struct SettingsView: View {
 
     static func launch() {
         let d = UserDefaults.standard
-        if d.bool(forKey: "signout") { ha.signOut(revoke: false) } // tests never call a server but the demo
+        if d.bool(forKey: "signout") { ha.signOut(revoke: false) } // tests never call a server but the demo; wipes the layout
         if let s = d.string(forKey: "server"), let u = d.string(forKey: "user"), let p = d.string(forKey: "pass"), !ha.signedIn {
             Task { await ha.signIn(server: s, user: u, password: p) }
         }

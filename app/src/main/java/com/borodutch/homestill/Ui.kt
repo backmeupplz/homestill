@@ -31,6 +31,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
@@ -79,16 +86,21 @@ fun HomestillTheme(content: @Composable () -> Unit) {
 fun Root() {
     if (Ha.base == null) { SignIn(); return }
     var settings by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     var cameras by remember { mutableStateOf(false) }
     var full by remember { mutableStateOf<String?>(null) }
     val camTab = cameras && Ha.cams.isNotEmpty()
     when {
         full != null -> { BackHandler { full = null }; FullCamera(full!!) { full = null } }
         settings -> { BackHandler { settings = false }; Settings { settings = false } }
+        editing -> { BackHandler { editing = false }; EditHome { editing = false } }
         else -> Scaffold(
             topBar = {
                 Column {
-                    TopAppBar(title = { Text(if (camTab) "Cameras" else "Home") }, actions = { IconButton({ settings = true }) { Icon(Ic.Settings, "Settings") } })
+                    TopAppBar(title = { Text(if (camTab) "Cameras" else "Home") }, actions = {
+                        if (!camTab) IconButton({ editing = true }) { Icon(Ic.Edit, "Edit home") }
+                        IconButton({ settings = true }) { Icon(Ic.Settings, "Settings") }
+                    })
                     Banner()
                 }
             },
@@ -160,14 +172,15 @@ fun HomeScreen() {
     var sheet by remember { mutableStateOf<Tile?>(null) }
     var confirm by remember { mutableStateOf<Tile?>(null) }
     val live = Ha.status == Status.Live
-    if (Ha.sections.isEmpty() && live) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No devices to show", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    val rooms = homeRooms(arrange(Ha.sections, Ha.layout))
+    if (rooms.isEmpty() && live) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No devices to show", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize().alpha(if (live) 1f else 0.6f), contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        for ((i, s) in Ha.sections.withIndex()) {
-            item(key = "h:$i", span = { GridItemSpan(maxLineSpan) }) {
-                Text(s.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+        for (r in rooms) {
+            item(key = "h:" + r.key, span = { GridItemSpan(maxLineSpan) }) {
+                Text(r.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
             }
-            items(s.tiles, key = { "$i:" + it.id }) { t -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
+            items(r.tiles, key = { r.key + "|" + it.t.id }) { (t) -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
         }
     }
     // fully open at once: the color wheel would sit below a half-open sheet
@@ -538,6 +551,141 @@ fun Settings(onBack: () -> Unit) {
     }
 }
 
+/** "Edit home": every room and tile from [arrange], hidden ones dimmed; every change is saved at once (no Cancel). */
+@Composable
+fun EditHome(onBack: () -> Unit) {
+    var dragging by remember { mutableStateOf<String?>(null) } // entity id
+    var draft by remember { mutableStateOf<JSONObject?>(null) } // while dragging: the layout with the drag so far; saved on drop
+    var dragTop by remember { mutableFloatStateOf(0f) } // the dragged row's top in the viewport, following the finger
+    var grabTop by remember { mutableFloatStateOf(0f) } // dragTop at the grab: auto-scroll only toward where the finger went
+    var more by remember { mutableStateOf(false) }
+    var reset by remember { mutableStateOf(false) }
+    val rooms = arrange(Ha.sections, if (dragging != null) draft else Ha.layout)
+    val list = rememberLazyListState()
+    val edge = with(LocalDensity.current) { 56.dp.toPx() }
+
+    fun rowOf(id: String) = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "t:$id" }
+
+    /** Saves a reorder; the view stays where it is (the list would otherwise follow its first row, e.g. above a room moved to the top). */
+    fun save(l: JSONObject?) {
+        list.requestScrollToItem(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset)
+        Ha.saveLayout(l)
+    }
+
+    /** Moves the dragged row by [dy]; when its middle passes a neighbor's middle, the draft moves it there. */
+    fun dragBy(dy: Float) {
+        val id = dragging ?: return
+        dragTop += dy
+        val me = rowOf(id) ?: return
+        val mid = dragTop + me.size / 2
+        val target = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key != me.key && mid >= it.offset && mid < it.offset + it.size } ?: return
+        val down = target.index > me.index
+        if (down != mid > target.offset + target.size / 2) return // past the middle only, so a tall header doesn't bounce it back
+        val rs = arrange(Ha.sections, draft)
+        val key = target.key as String
+        val (room, index) = if (key.startsWith("h:")) {
+            val i = rs.indexOfFirst { "h:" + it.key == key }.takeIf { it >= 0 } ?: return
+            if (down) rs[i].key to 0 else if (i > 0) rs[i - 1].key to Int.MAX_VALUE else return // nothing above the first header
+        } else {
+            val other = key.removePrefix("t:")
+            val r = rs.firstOrNull { r -> r.tiles.any { it.t.id == other } } ?: return
+            r.key to r.tiles.map { it.t.id }.filter { it != id }.indexOf(other) + if (down) 1 else 0
+        }
+        // keep the scroll position put when the first visible row is involved (it is the list's anchor)
+        if (list.firstVisibleItemIndex in setOf(me.index, target.index)) list.requestScrollToItem(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset)
+        draft = moveTile(draft, Ha.sections, id, room, index)
+    }
+
+    fun drop() {
+        val id = dragging ?: return
+        val d = draft
+        dragging = null; draft = null
+        if (d === Ha.layout) return // never moved
+        val r = arrange(Ha.sections, d).firstOrNull { r -> r.tiles.any { it.t.id == id } } ?: return
+        Ha.saveLayout(moveTile(Ha.layout, Ha.sections, id, r.key, r.tiles.indexOfFirst { it.t.id == id }))
+    }
+
+    // auto-scroll while the dragged row is near the top or bottom edge
+    LaunchedEffect(dragging) {
+        while (dragging != null) {
+            withFrameNanos { }
+            val me = dragging?.let(::rowOf) ?: continue
+            val info = list.layoutInfo
+            val v = when {
+                dragTop < grabTop && dragTop < info.viewportStartOffset + edge -> (dragTop - info.viewportStartOffset - edge) / 6
+                dragTop > grabTop && dragTop + me.size > info.viewportEndOffset - edge -> (dragTop + me.size - info.viewportEndOffset + edge) / 6
+                else -> 0f
+            }
+            if (v != 0f && list.scrollBy(v) != 0f) dragBy(0f)
+        }
+    }
+
+    Scaffold(topBar = {
+        TopAppBar(title = { Text("Edit home") }, navigationIcon = { IconButton(onBack) { Icon(Ic.Back, "Done") } }, actions = {
+            Box {
+                IconButton({ more = true }) { Icon(Ic.More, "More options") }
+                DropdownMenu(more, { more = false }) { DropdownMenuItem({ Text("Reset Home layout") }, { more = false; reset = true }) }
+            }
+        })
+    }) { pad ->
+        LazyColumn(Modifier.padding(pad).fillMaxSize(), state = list) {
+            for ((ri, r) in rooms.withIndex()) {
+                item(key = "h:" + r.key) {
+                    Row(Modifier.animateItem().fillMaxWidth().padding(start = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).alpha(if (r.hidden) 0.45f else 1f)) {
+                            Text(r.title, style = MaterialTheme.typography.titleMedium)
+                            if (r.hidden) Text("Hidden", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton({ Ha.saveLayout(toggleHidden(Ha.layout, "hiddenRooms", r.key)) }) {
+                            Icon(if (r.hidden) Ic.EyeOff else Ic.Eye, if (r.hidden) "Show ${r.title}" else "Hide ${r.title}")
+                        }
+                        IconButton({ save(moveRoom(Ha.layout, Ha.sections, r.key, ri - 1)) }, enabled = ri > 0) { Icon(Ic.ArrowUp, "Move ${r.title} up") }
+                        IconButton({ save(moveRoom(Ha.layout, Ha.sections, r.key, ri + 1)) }, enabled = ri < rooms.size - 1) { Icon(Ic.ArrowDown, "Move ${r.title} down") }
+                    }
+                }
+                itemsIndexed(r.tiles, key = { _, s -> "t:" + s.t.id }) { i, s ->
+                    val id = s.t.id
+                    val drag = dragging == id
+                    var menu by remember { mutableIntStateOf(0) } // 1 = actions, 2 = rooms
+                    fun move(room: String, index: Int) { menu = 0; save(moveTile(Ha.layout, Ha.sections, id, room, index)) }
+                    Box(if (drag) Modifier.zIndex(1f).graphicsLayer { translationY = dragTop - (rowOf(id)?.offset ?: 0) } else Modifier.animateItem()) {
+                        Row(Modifier.fillMaxWidth().background(if (drag) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
+                            .clickable(enabled = dragging == null) { menu = 1 }.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val e = Ha.ents[id]
+                            Row(Modifier.weight(1f).alpha(if (s.hidden) 0.45f else 1f), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(icon(domain(id), e?.s.orEmpty(), e?.a ?: JSONObject()), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(Modifier.padding(start = 16.dp)) {
+                                    Text(s.t.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (s.hidden) Text("Hidden", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            IconButton({ Ha.saveLayout(toggleHidden(Ha.layout, "hidden", id)) }) {
+                                Icon(if (s.hidden) Ic.EyeOff else Ic.Eye, if (s.hidden) "Show ${s.t.name}" else "Hide ${s.t.name}")
+                            }
+                            Icon(Ic.DragHandle, "Drag ${s.t.name}", Modifier.size(48.dp).pointerInput(id) {
+                                detectDragGestures(
+                                    onDragStart = { _ -> rowOf(id)?.let { row -> dragTop = row.offset.toFloat(); grabTop = dragTop; draft = Ha.layout; dragging = id } },
+                                    onDragEnd = ::drop, onDragCancel = ::drop,
+                                    onDrag = { c, d -> c.consume(); dragBy(d.y) })
+                            }.padding(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(menu != 0, { menu = 0 }) {
+                            if (menu == 1) {
+                                DropdownMenuItem({ Text("Move up") }, { move(r.key, i - 1) }, enabled = i > 0)
+                                DropdownMenuItem({ Text("Move down") }, { move(r.key, i + 1) }, enabled = i < r.tiles.size - 1)
+                                DropdownMenuItem({ Text("Move to room…") }, { menu = 2 })
+                            } else for (to in rooms) DropdownMenuItem({ Text(to.title) }, { move(to.key, Int.MAX_VALUE) }, enabled = to.key != r.key)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (reset) AlertDialog({ reset = false }, title = { Text("Reset?") }, text = { Text("Home goes back to how Home Assistant arranges it.") },
+        confirmButton = { TextButton({ reset = false; save(null) }) { Text("Reset") } },
+        dismissButton = { TextButton({ reset = false }) { Text("Cancel") } })
+}
+
 private fun vec(name: String, path: String) = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
     .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black)).build()
 
@@ -569,5 +717,12 @@ object Ic {
     val Vacuum by lazy { vec("vacuum", "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zM10 8a2 2 0 1 0 4 0 2 2 0 1 0-4 0z") }
     val Grass by lazy { vec("grass", "M2 20h20v-2H2zm2-3l2.5-8L9 17zm6 0l2-11 2 11zm5 0l2.5-8L20 17z") }
     val Up by lazy { vec("up", "M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z") }
+    val Edit by lazy { vec("edit", "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z") }
+    val Eye by lazy { vec("eye", "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z") }
+    val EyeOff by lazy { vec("eyeoff", "M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z") }
+    val DragHandle by lazy { vec("drag", "M20 9H4v2h16V9zM4 15h16v-2H4v2z") }
+    val ArrowUp by lazy { vec("arrowup", "M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z") }
+    val ArrowDown by lazy { vec("arrowdown", "M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z") }
+    val More by lazy { vec("more", "M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z") }
     val Script by lazy { vec("script","M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z") }
 }

@@ -50,6 +50,7 @@ object Ha {
     private lateinit var app: Context
     private lateinit var prefs: SharedPreferences
     private lateinit var cacheFile: File
+    private lateinit var layoutPrefs: SharedPreferences // the phone's Home layout: kept when a session ends, deleted on sign-out
     private val main = Handler(Looper.getMainLooper())
     private val scope = MainScope()
     val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build()
@@ -67,7 +68,8 @@ object Ha {
 
     val ents = mutableStateMapOf<String, Ent>()
     val pending = mutableStateMapOf<String, Pending>()
-    var sections by mutableStateOf(listOf<Section>()); private set
+    var sections by mutableStateOf(listOf<Section>()); private set // as Home Assistant arranges them; the layout applies on top
+    var layout by mutableStateOf<JSONObject?>(null); private set // null = the default Home
     var cams by mutableStateOf(listOf<Tile>()); private set
     var ptz by mutableStateOf(mapOf<String, String>()); private set // camera → the onvif entity that pans/tilts it
     private var reg: Map<String, Reg>? = null
@@ -90,6 +92,8 @@ object Ha {
         app = c.applicationContext
         prefs = app.getSharedPreferences("ha", Context.MODE_PRIVATE)
         cacheFile = File(app.filesDir, "home.json")
+        layoutPrefs = app.getSharedPreferences("layout", Context.MODE_PRIVATE)
+        layout = layoutPrefs.getString("layout", null)?.let { runCatching { JSONObject(it) }.getOrNull() } // broken = default
         base = prefs.getString("base", null)
         refresh = prefs.getString("refresh", null)
         if (base != null) loadCache()
@@ -192,8 +196,17 @@ object Ha {
         val b = base; val r = refresh
         if (why == null && b != null && r != null) scope.launch(Dispatchers.IO) { runCatching { post("$b/auth/token", FormBody.Builder().add("token", r).add("action", "revoke").build()) } }
         close(); prefs.edit().clear().apply(); cacheFile.delete()
+        if (why == null) saveLayout(null) // a session that ended keeps the layout
         base = null; refresh = null; access = null; expiresAt = 0; user = ""; notice = why
         ents.clear(); pending.clear(); sections = emptyList(); cams = emptyList(); ptz = emptyMap(); reg = null; devArea = null; areas = null
+    }
+
+    /** Stores the Home layout at once; null deletes it (reset, sign-out). */
+    fun saveLayout(l: JSONObject?) {
+        layout = l
+        val e = layoutPrefs.edit()
+        if (l == null) e.remove("layout") else e.putString("layout", l.toString())
+        e.apply()
     }
 
     // ---- socket ----
@@ -321,8 +334,8 @@ object Ha {
         val shown = sections.flatMap { it.tiles } + cams
         if (shown.isEmpty()) return
         val o = JSONObject()
-        fun tile(t: Tile) = JSONArray().put(t.id).put(t.name).apply { t.dp?.let { put(it) } }
-        o.put("sections", JSONArray(sections.map { s -> JSONObject().put("t", s.title).put("tiles", JSONArray(s.tiles.map(::tile))) }))
+        fun tile(t: Tile) = JSONArray().put(t.id).put(t.name).put(t.full).apply { t.dp?.let { put(it) } }
+        o.put("sections", JSONArray(sections.map { s -> JSONObject().put("k", s.key).put("t", s.title).put("tiles", JSONArray(s.tiles.map(::tile))) }))
         o.put("cams", JSONArray(cams.map(::tile)))
         val e = JSONObject()
         for (t in shown) ents[t.id]?.let { x -> e.put(t.id, JSONObject().put("s", x.s).put("a", x.a)) }
@@ -331,13 +344,15 @@ object Ha {
         scope.launch(Dispatchers.IO) { runCatching { cacheFile.writeText(text) } }
     }
 
+    /** All or nothing: a file from before section keys (no "k") throws, so it is drawn after the first sync instead. */
     private fun loadCache() = runCatching {
         val o = JSONObject(cacheFile.readText())
-        fun tiles(a: JSONArray) = List(a.length()) { a.getJSONArray(it).let { t -> Tile(t.getString(0), t.getString(1), if (t.length() > 2) t.getInt(2) else null) } }
-        val e = o.getJSONObject("ents")
-        for (id in e.keys()) e.getJSONObject(id).let { ents[id] = Ent(it.getString("s"), it.getJSONObject("a")) }
+        fun tiles(a: JSONArray) = List(a.length()) { a.getJSONArray(it).let { t -> Tile(t.getString(0), t.getString(1), if (t.length() > 3) t.getInt(3) else null, t.getString(2)) } }
         val s = o.getJSONArray("sections")
-        sections = List(s.length()) { s.getJSONObject(it).let { x -> Section(x.getString("t"), tiles(x.getJSONArray("tiles"))) } }
-        cams = tiles(o.getJSONArray("cams"))
+        val secs = List(s.length()) { s.getJSONObject(it).let { x -> Section(x.getString("k"), x.getString("t"), tiles(x.getJSONArray("tiles"))) } }
+        val c = tiles(o.getJSONArray("cams"))
+        val e = o.getJSONObject("ents")
+        val es = e.keys().asSequence().associateWith { id -> e.getJSONObject(id).let { Ent(it.getString("s"), it.getJSONObject("a")) } }
+        ents.putAll(es); sections = secs; cams = c
     }
 }
