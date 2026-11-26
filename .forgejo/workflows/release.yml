@@ -10,7 +10,8 @@
 # testflight-only uploads the iPhone build without submitting it, apk-only attaches the APK (here and on GitHub) and
 # leaves both stores alone, full is what a published release does.
 # A release for GitHub only: push the tag, make it a DRAFT release here (a draft doesn't run this workflow), then run
-# apk-only on the tag. Publishing the draft later ships that version to both stores.
+# apk-only on the tag. To ship it to both stores later, publish the draft and run full on the tag (publishing a draft
+# doesn't start this workflow).
 # Secrets: KEYSTORE_PROPERTIES, UPLOAD_JKS, PLAY_SERVICE_ACCOUNT_JSON, ASC_KEY_P8 (the .p8 key), GH_MIRROR_TOKEN
 # (GitHub token with repo scope, for the GitHub release).
 # A step whose secret is missing is skipped with a warning.
