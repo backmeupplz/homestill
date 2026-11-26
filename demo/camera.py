@@ -41,6 +41,8 @@ class DemoCamera(Camera):
         self._attr_name = name
         self._attr_unique_id = f"homestill_demo_{photo}"
         self.photo = PHOTOS / f"{photo}.jpg"
+        if photo == "driveway":
+            self.entity_id = "camera.demo_camera"  # the demo's image_processing entities watch this one
 
     @override
     async def async_camera_image(

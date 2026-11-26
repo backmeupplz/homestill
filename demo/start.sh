@@ -6,16 +6,27 @@
 set -e
 cd /
 rm -rf /config
-mkdir -p /config/custom_components
+mkdir -p /config/custom_components /config/.storage
 cp -r /demo/onvif /config/custom_components/
-http='http:\n  use_x_forwarded_for: true\n  trusted_proxies: [127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]\n'
+printf 'default_config:\ndemo:\nonvif:\n' > /config/configuration.yaml
+# HTTP settings live in .storage/http since 2026.11 (yaml ones become a "pending" trial that reverts and restarts HA
+# after 5 minutes), so write them there as the confirmed config. Trust the reverse proxy's X-Forwarded-For.
+http() {
+  cat > /config/.storage/http <<EOF
+{"version": 3, "minor_version": 1, "key": "http", "data": {"pending": null, "yaml_migration_done": true, "stable": {
+  "server_host": [$1], "server_port": 8123, "use_x_forwarded_for": true,
+  "trusted_proxies": ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+  "cors_allowed_origins": ["https://cast.home-assistant.io"], "login_attempts_threshold": -1, "ip_ban_enabled": true,
+  "ssl_profile": "intermediate_v6", "use_x_frame_options": true, "created_at": "2026-11-25T00:00:00+00:00",
+  "error": null, "error_message": null}}}
+EOF
+}
 # Onboard while listening on loopback only, so nobody outside can claim the owner account first.
-printf "default_config:\ndemo:\nonvif:\n$http  server_host: 127.0.0.1\n" > /config/configuration.yaml
+http '"127.0.0.1"'
 python3 -P -m homeassistant --config /config &
 python3 -P /demo/setup.py
 kill $! && wait $! || true
-rm -f /config/.storage/http # HA copies the yaml http settings here once; drop them so the new ones apply
-printf "default_config:\ndemo:\nonvif:\n$http" > /config/configuration.yaml
+http '"0.0.0.0", "::"'
 python3 -P -m homeassistant --config /config &
 ha=$!
 end=$(($(date +%s) + 86400))
