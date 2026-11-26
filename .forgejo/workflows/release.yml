@@ -7,7 +7,10 @@
 # fastlane/metadata/android/en-US/changelogs/<versionCode>.txt, the notes Play and the App Store show.
 # The same file in fastlane/metadata/android/<language>/changelogs/ holds that language's notes (English otherwise).
 # Run by hand (Actions → Release → Run workflow): dry-run builds everything and publishes nothing,
-# testflight-only uploads the iPhone build without submitting it, full is what a published release does.
+# testflight-only uploads the iPhone build without submitting it, apk-only attaches the APK (here and on GitHub) and
+# leaves both stores alone, full is what a published release does.
+# A release for GitHub only: push the tag, make it a DRAFT release here (a draft doesn't run this workflow), then run
+# apk-only on the tag. Publishing the draft later ships that version to both stores.
 # Secrets: KEYSTORE_PROPERTIES, UPLOAD_JKS, PLAY_SERVICE_ACCOUNT_JSON, ASC_KEY_P8 (the .p8 key), GH_MIRROR_TOKEN
 # (GitHub token with repo scope, for the GitHub release).
 # A step whose secret is missing is skipped with a warning.
@@ -24,7 +27,7 @@ on:
       mode:
         description: What to publish
         type: choice
-        options: [dry-run, testflight-only, full]
+        options: [dry-run, testflight-only, apk-only, full]
         default: dry-run
 permissions:
   contents: write # attach the APK
@@ -108,7 +111,7 @@ jobs:
       # homestill.apk is the same file under a stable name for releases/latest/download/homestill.apk.
       - id: attach
         name: Attach the APK
-        if: env.MODE == 'full'
+        if: env.MODE == 'full' || env.MODE == 'apk-only'
         env:
           FORGEJO_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
@@ -116,17 +119,20 @@ jobs:
           RELEASE_NOTES: ${{ github.event.release.body }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
+          # Run by hand there's no release event: the GitHub release takes the version's release notes
+          [ -n "$RELEASE_NOTES" ] || export RELEASE_NOTES="$(cat "$NOTES_DIR/$CODE.txt")"
           cp app/build/outputs/apk/release/app-release.apk "homestill-$VERSION.apk"
           cp app/build/outputs/apk/release/app-release.apk homestill.apk
           .github/scripts/attach.sh "$TAG" "homestill-$VERSION.apk" homestill.apk
       - name: Google Play
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && env.MODE != 'testflight-only' }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && env.MODE != 'testflight-only' && env.MODE != 'apk-only' }}
         run: |
           [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::warning::No PLAY_SERVICE_ACCOUNT_JSON secret: skipping Google Play"; exit 0; }
           python3 .github/scripts/play.py app/build/outputs/bundle/release/app-release.aab "$VERSION" "$NOTES_DIR/$CODE.txt" $DRY
 
   ios:
     needs: version
+    if: inputs.mode != 'apk-only'
     runs-on: macos-26
     # The first release with every locale's 120 screenshots waits for the build, then uploads them all
     timeout-minutes: 180

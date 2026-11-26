@@ -29,6 +29,8 @@ only as one-line readings inside rooms.
   iPhone build to App Review (`ios/release.sh`), signed APK as `homestill-X.Y.Z.apk` + `homestill.apk` on the Forgejo
   and GitHub releases. Version = `versionName`/`versionCode` in `app/build.gradle.kts` (iOS build number = versionCode);
   notes in `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`, store texts in `appstore/` and `fastlane/`.
+  GitHub only (no stores yet): a DRAFT Forgejo release on the pushed tag plus a manual `apk-only` run; publishing the
+  draft later sends that version to both stores.
 
 ## Speed is the feature
 
