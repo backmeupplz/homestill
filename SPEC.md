@@ -6,8 +6,9 @@ phones: Android at the repo root (`app/`, Kotlin, Jetpack Compose + Material 3) 
 follow this document; when a platform has to differ, it says so here. Sister apps whose layout and habits we copy:
 Spinwell (`~/code/spinwell-main`, the closest: Compose + SwiftUI, SPEC-driven) and ABS+ (`~/code/absplus`).
 
-No dashboards, history, graphs, automations, notifications, widgets, energy, map or settings editor. Sensors appear
-only as one-line readings inside rooms.
+No Home Assistant dashboards, history, graphs, automations, notifications, widgets, energy, map or settings editor.
+Sensors appear only as one-line readings inside rooms. The Home screen's own layout (room order, tile order, moving
+tiles between rooms, hiding) is customizable on the phone ("Customizing Home"); nothing is written to Home Assistant.
 
 ## Platforms
 
@@ -69,7 +70,8 @@ only as one-line readings inside rooms.
   token is missing or expires within 60 s, before every (re)connect and before any HTTP call. HTTP 400 (`invalid_grant`)
   → signed out: back to sign-in with "Your session ended. Sign in again." Network errors are not sign-outs.
 - Sign out (Settings): `POST /auth/token` form `token=<refresh_token>&action=revoke` (ignore failures), wipe storage
-  and caches, back to sign-in.
+  and caches (the Home layout too), back to sign-in. A session that ended (`invalid_grant`) wipes the same except the
+  Home layout, so signing in again brings the customized Home back.
 
 ## WebSocket API
 
@@ -114,18 +116,22 @@ only as one-line readings inside rooms.
     sensors and device knobs; an unavailable reading is noise). Sensors with `device_class` `timestamp` are skipped.
 - Area of an entity: its own `ai`, else its device's `area_id`, else none. Home lists areas in area-registry order
   (only those with entities), then "Other" for controls without an area. Scenes and scripts go to a "Scenes" section
-  at the top if they have no area.
+  at the top if they have no area. Each section has a key: `area:<area_id>`, or the reserved `scenes` and `other` (an
+  area whose id is "other" stays `area:other`). The key, not the title, identifies a room everywhere (layout, list keys).
 - Keep every attribute of a shown entity (no whitelist), in memory and in the snapshot cache: the controls below read
   many of them. iOS keeps them as a `[String: Any]`-like JSON value (persisted as JSON), Android as the `JSONObject`.
 - Name: `attributes.friendly_name` (else the entity id). If it starts with the area name followed by a space (case
   insensitive) and something is left, drop that prefix ("Living Room Lights" in Living Room → "Lights"). Within a section
-  sort by displayed name. Never derive anything from the entity id beyond its domain: ids and names can disagree.
+  sort by displayed name. Never derive anything from the entity id beyond its domain: ids and names can disagree. A tile
+  keeps both names: the shown one (prefix dropped) and the full one, which it shows when moved to another room.
 - Snapshot cache: after each full sync and on going to the background, write the shown model (areas, entities with
   state + the attributes we use) to one JSON file in app storage; at launch draw it at once, dimmed until connected.
+  It holds the sections as Home Assistant arranges them (keys and full names included); the layout is applied on top
+  when drawing. A cache file from before keys existed is ignored (drawn after the first sync instead).
 
 ## Home screen
 
-- Top bar: title "Home", a gear → Settings. A slim banner under it when not connected: "Connecting…" or
+- Top bar: title "Home", a pencil ("Edit home") → the editor (below), a gear → Settings. A slim banner under it when not connected: "Connecting…" or
   "Can't reach Home Assistant" (tap retries now). While not connected tiles are dimmed and taps do nothing.
 - Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). Within a section,
   controls first, then settings and readings, each sorted by name. "On"-like tiles are tinted: lights by their
@@ -193,6 +199,56 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
 - Optimistic update: flip `s` locally at once; if the server's state hasn't confirmed within 5 s (or the call fails),
   put back the last server state.
 
+## Customizing Home
+
+The phone keeps one Home layout on top of the sections Home Assistant gives (above). It only stores the user's changes,
+so devices and rooms added later still appear by default, and an entity that is briefly missing (an unavailable reading
+is not shown, the snapshot is drawn before a sync) keeps its place and its hidden flag when it comes back.
+
+- Layout (stored as this JSON, both platforms; Android: its own SharedPreferences file `layout`, key `layout`; iOS:
+  UserDefaults key `layout`, the JSON as a string), every field optional:
+  `{"order":[room keys],"hiddenRooms":[room keys],"tiles":{"<room key>":[entity ids]},"moved":{"<entity id>":"<room key>"},"hidden":[entity ids]}`.
+  `moved` holds only tiles dragged out of their own room. A broken or missing layout = the default Home.
+- `arrange(sections, layout)` (pure, unit-tested; the editor and Home both draw from it) → rooms, each with key, title,
+  `hidden` flag and tiles, each tile with `hidden` and `moved` flags:
+  1. A tile's room is `moved[id]` when that key is one of the current sections, else its own section.
+  2. Room order: keys from `order` that are current sections, in that order; then the other sections in their default
+     order.
+  3. Tiles in a room: ids from `tiles[key]` that land in this room, in that order; then the rest that land here, in
+     default order (sections first, then position within them). A moved tile shows its full name.
+  4. `hidden` (tiles) and `hiddenRooms` set the flags. A hidden room stays hidden when it gains a device.
+- Home draws rooms that are not hidden, with their tiles that are not hidden; a room left with no tiles is not drawn.
+- The editor ("Edit home", a full screen from the pencil) lists every room and tile, hidden ones included, dimmed with
+  "Hidden": a header row per room (title, eye toggle, move up / move down buttons) and under it a row per tile (domain
+  icon, name, eye toggle, drag handle). An empty room still shows its header, so tiles can be moved into it. Drag a tile
+  by its handle within its room or into another room (it lands under the header it is dropped below; nothing can go above
+  the first header). Tapping a tile row opens a menu: Move up, Move down, Move to room… (every room), so everything
+  works without dragging (screen readers, tests). The top bar has a back arrow / "Done" and a menu with "Reset Home
+  layout" (confirm "Reset?", then delete the layout). Changes apply at once and are saved at once; there is no Cancel.
+  The editor redraws from `arrange` on every change and on every Home Assistant update while it is open.
+- Saving edits the stored layout, never rebuilds it from what is shown:
+  - Moving a tile to room R: `moved[id] = R`, or remove `moved[id]` when R is its own section; `tiles[R]` = R's tile ids in
+    their new order, followed by the ids already in the old `tiles[R]` that are not current (kept, so they come back in
+    place). The room it left needs no change (rule 1/3 drop it there).
+  - Moving a room: `order` = all current room keys in the new order, followed by old `order` keys that are not current.
+  - Eye toggles add to / remove from `hidden` or `hiddenRooms`.
+- The layout belongs to the phone: it is never sent anywhere. Sign out deletes it; a session that ended keeps it.
+- Cameras keep Home Assistant's areas for pan/tilt (the layout never changes `ptzTargets`), and the Cameras tab is not
+  customizable.
+- Test vectors (both platforms test exactly these). Sections, in default order: `scenes` "Scenes" [scene.s];
+  `area:a` "A" [light.a1 "One", light.a2 "Two", light.a4 "Four", sensor.a3 "Three"] (controls first);
+  `area:b` "B" [light.b1 "B Lamp" shown as "Lamp"]; `other` "Other" [switch.o].
+  | Layout | Result |
+  | --- | --- |
+  | none | Scenes, A [a1 a2 a4 a3], B [b1], Other [o] |
+  | `order:["area:b"]` | B, Scenes, A, Other |
+  | `tiles:{"area:a":["light.a2","light.a1"]}` | A [a2 a1 a4 a3] |
+  | `tiles:{"area:a":["sensor.zz","light.a1"]}` (zz not current) | A [a1 a2 a4 a3]; saving a move in A keeps `sensor.zz` at the end of `tiles["area:a"]` |
+  | `moved:{"light.b1":"area:a"}, tiles:{"area:a":["light.a1","light.b1"]}` | A [a1 b1 (moved, shown "B Lamp") a2 a4 a3]; B has no tiles: not on Home, empty header in the editor |
+  | `moved:{"light.a1":"area:gone"}` | A [a1 a2 a4 a3] (a1 not flagged moved) |
+  | `hidden:["light.a2"], hiddenRooms:["other"]` | Home: A [a1 a4 a3], no Other; editor: a2 and Other flagged hidden |
+  | `order:["zz","area:a"]` | A, Scenes, B, Other; then moving B to the top saves `order` = [area:b, area:a, scenes, other, zz] |
+
 ## Cameras screen
 
 - Bottom tabs "Home" and "Cameras" (the Cameras tab only when there is at least one camera).
@@ -235,7 +291,8 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
   (domain filter, hidden/category skip, area resolution entity→device→Other, readings only with an area and a state,
   controls before readings, prefix stripping, sort), state texts for the table above, tap decisions (lock, vacuum,
   media player, alarm never acting), the pan/tilt camera rule (own `onvif`; hidden `onvif` in the area of the only
-  shown camera; two shown cameras in that area → none), token-needs-refresh decision. Android JUnit
+  shown camera; two shown cameras in that area → none), token-needs-refresh decision, `arrange` and the layout
+  edits (the test vectors under "Customizing Home"). Android JUnit
   (`testDebugUnitTest`), iOS XCTest target `HomestillTests`.
 - Control testing happens only against the throwaway demo server (`tools/demo-ha.sh`: Docker Home Assistant with the
   `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). Its rooms hold one of
