@@ -220,7 +220,9 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
 
 ## Settings
 
-- Server URL, signed-in user name (`auth/current_user`), app version, "Sign out". Nothing else.
+- Server URL, signed-in user name (`auth/current_user`), app version, "Privacy policy" (opens
+  https://homestill.app/privacy/ in the browser; Google Play wants the policy linked inside the app), "Sign out".
+  Nothing else.
 
 ## Tests and checks
 

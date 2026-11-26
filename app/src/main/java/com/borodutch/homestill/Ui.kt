@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -519,6 +520,8 @@ fun Settings(onBack: () -> Unit) {
         Column(Modifier.padding(pad)) {
             for ((k, v) in listOf("Server" to Ha.base.orEmpty(), "Signed in as" to Ha.user, "Version" to version.orEmpty()))
                 ListItem(headlineContent = { Text(v) }, overlineContent = { Text(k) })
+            val uri = LocalUriHandler.current
+            TextButton({ uri.openUri("https://homestill.app/privacy/") }, Modifier.padding(horizontal = 8.dp)) { Text("Privacy policy") }
             TextButton({ Ha.signOut() }, Modifier.padding(horizontal = 8.dp), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Sign out") }
         }
     }

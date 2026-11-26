@@ -116,6 +116,7 @@ struct SettingsView: View {
                 LabeledContent("Server", value: ha.base ?? "")
                 LabeledContent("User", value: ha.userName ?? "…")
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                Link("Privacy policy", destination: URL(string: "https://homestill.app/privacy/")!)
                 Button("Sign out", role: .destructive) { dismiss(); ha.signOut() }
             }
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
