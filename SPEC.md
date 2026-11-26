@@ -24,6 +24,10 @@ only as one-line readings inside rooms.
   `NSAllowsLocalNetworking`: when present, iOS ignores `NSAllowsArbitraryLoads` and blocks plain http to dotted hostnames
   (checked: `http://<mac>.<tailnet>.ts.net:8124` failed with error -1022 until the key was removed).
 - English only for now. Follows the system light/dark theme (Android: Material You dynamic color on 12+).
+- Releases (as Spinwell): a published Forgejo release `vX.Y.Z` runs `.forgejo/workflows/release.yml`: AAB to Google Play,
+  iPhone build to App Review (`ios/release.sh`), signed APK as `homestill-X.Y.Z.apk` + `homestill.apk` on the Forgejo
+  and GitHub releases. Version = `versionName`/`versionCode` in `app/build.gradle.kts` (iOS build number = versionCode);
+  notes in `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`, store texts in `appstore/` and `fastlane/`.
 
 ## Speed is the feature
 

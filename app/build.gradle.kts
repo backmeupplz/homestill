@@ -1,7 +1,12 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Upload key lives outside git: keystore.properties + the .jks it points to. Without it release builds come out unsigned.
+val keys = Properties().apply { rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
 
 android {
     namespace = "com.borodutch.homestill"
@@ -11,7 +16,15 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        if (keys.isNotEmpty()) create("upload") {
+            storeFile = rootProject.file(keys.getProperty("storeFile"))
+            storePassword = keys.getProperty("storePassword")
+            keyAlias = keys.getProperty("keyAlias")
+            keyPassword = keys.getProperty("keyPassword")
+        }
     }
     dependenciesInfo { includeInApk = false }
     testOptions { unitTests.isReturnDefaultValues = true }
@@ -20,7 +33,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            if (project.hasProperty("debugSign")) signingConfig = signingConfigs.getByName("debug") // -PdebugSign: installable release build without an upload key
+            signingConfig = signingConfigs.findByName("upload") ?: if (project.hasProperty("debugSign")) signingConfigs.getByName("debug") else null // -PdebugSign: installable release build without an upload key
         }
     }
 }
