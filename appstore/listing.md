@@ -45,15 +45,15 @@ Homestill is an independent app and is not affiliated with or endorsed by Home A
 smart,client,hass,device,remote,light,switch,thermostat,lock,blinds,sensor,scene,onvif,ptz,local
 
 ## Screenshot captions
-1. Every room of your home on one screen
-2. Brightness, warmth and color for lights
-3. Thermostats, media, vacuums and more
-4. All your cameras live in one list
-5. Full screen with zoom, pan and tilt
-6. Light or dark, following your phone
+1. Your Home Assistant rooms on one screen
+2. Set light brightness, warmth, and color
+3. Set temperature, mode, preset, and fan
+4. Watch your cameras live in one list
+5. Open full screen to pan, tilt, and zoom
+6. Follows your phone in light or dark mode
 
 ## Feature graphic tagline (max 60)
-Fast Home Assistant controls and live cameras
+Fast device controls and live cameras for Home Assistant
 
 ## URLs
 - Support: https://homestill.app
