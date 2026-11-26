@@ -328,6 +328,7 @@ extension Ha {
         case "media_player": return t.s == "playing" || t.s == "paused" ? (t.str("media_title") ?? s) : s
         case "number", "input_number": return (Double(t.s).map { fmt($0) } ?? t.s) + unit
         case "select", "input_select": return t.s
+        case "alarm_control_panel": return t.s == "armed_custom_bypass" ? "Armed custom" : s
         case "sensor":
             guard let d = Double(t.s) else { return t.s }
             return (t.dp.map { fmt(d, dp: $0) } ?? t.s) + unit
@@ -377,6 +378,7 @@ extension Ha {
     @ObservationIgnored private var flowBase: String?
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var pathSeen = false
+    @ObservationIgnored private var lastInterface: String?
     @ObservationIgnored private var wasConnected = false
     @ObservationIgnored var onSync: (() -> Void)?  // Debug hooks
     /// Unit tests run inside the app: never connect there.
@@ -392,8 +394,11 @@ extension Ha {
         }
         monitor.pathUpdateHandler = { p in
             Task { @MainActor in
+                let iface = p.availableInterfaces.first?.name
+                defer { ha.lastInterface = iface }
                 if !ha.pathSeen { ha.pathSeen = true; return } // fires once at start
-                if p.status == .satisfied, ha.conn != .connected { ha.reconnect() }
+                // a new network (Wi-Fi → cellular) leaves the old socket dead but "connected" until the ping times out
+                if p.status == .satisfied, ha.conn != .connected || iface != ha.lastInterface { ha.reconnect() }
             }
         }
         monitor.start(queue: .main)
@@ -650,7 +655,8 @@ extension Ha {
         guard let base = flowBase, let flowId else { return }
         do {
             let (d, _) = try await post(base + "/auth/login_flow/" + flowId, json: body)
-            guard let f = Self.obj(d) else { signInMessage = "Unexpected answer from Home Assistant."; return }
+            // anything but a form or success ends this flow (e.g. HA restarted: "Invalid flow specified"): back to the password
+            guard let f = Self.obj(d) else { self.flowId = nil; needsCode = false; signInMessage = "Unexpected answer from Home Assistant."; return }
             switch (f["type"] as? String, f["step_id"] as? String) {
             case ("create_entry", _):
                 guard let code = f["result"] as? String else { return }
@@ -678,7 +684,9 @@ extension Ha {
             case ("abort", _):
                 self.flowId = nil; needsCode = false
                 signInMessage = f["reason"] as? String ?? "Sign-in was aborted."
-            default: signInMessage = "Unexpected answer from Home Assistant."
+            default:
+                self.flowId = nil; needsCode = false
+                signInMessage = f["message"] as? String ?? "Unexpected answer from Home Assistant."
             }
         } catch { signInMessage = error.localizedDescription }
     }

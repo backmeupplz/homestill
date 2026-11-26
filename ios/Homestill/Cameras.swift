@@ -101,6 +101,8 @@ struct CameraFeed: View {
     @State private var still: UIImage?
     @State private var failed = false
     @State private var start = Date.now
+    @State private var ask = 0 // bumped on a reconnect when no stream is playing, to ask for one again
+    @Environment(\.scenePhase) private var phase
 
     var body: some View {
         ZStack {
@@ -114,7 +116,9 @@ struct CameraFeed: View {
             else if failed { label("Stream unavailable") }
             else if !ready && still == nil { ProgressView().tint(.white) }
         }
-        .task(id: "\(cam.id) \(ha.connected) \(cam.s == "unavailable")") { await run() }
+        .task(id: "\(cam.id) \(cam.s == "unavailable") \(phase == .background) \(ask)") { await run() }
+        // a socket drop keeps a playing stream (HLS is plain HTTP); a card with none (snapshots, failed, stalled) asks again
+        .onChange(of: ha.connected) { _, on in if on && player?.timeControlStatus != .playing { ask += 1 } }
     }
 
     private func label(_ s: String) -> some View { Text(s).font(.subheadline).foregroundStyle(.white.opacity(0.8)) }
@@ -123,7 +127,7 @@ struct CameraFeed: View {
         start = .now
         ready = false; failed = false
         defer { player?.pause(); player = nil }
-        guard cam.s != "unavailable", ha.connected, let base = ha.base else { return }
+        guard cam.s != "unavailable", phase != .background, let base = ha.base else { return } // nothing plays in the background
         let poster = Task { if let i = await snapshot(base) { if !ready { still = i } } }
         defer { poster.cancel() }
         let caps = try? await ha.call(["type": "camera/capabilities", "entity_id": cam.id]) as? [String: Any]
@@ -145,7 +149,7 @@ struct CameraFeed: View {
                 if attempt == 1 { failed = true; return }
             }
         }
-        poster.cancel()
+        poster.cancel() // no stream (none offered, it failed, or the socket is down): snapshots are plain HTTP and keep coming
         while !Task.isCancelled {
             if let i = await snapshot(base) { still = i }
             try? await Task.sleep(for: .seconds(1))

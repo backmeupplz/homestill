@@ -208,7 +208,7 @@ import XCTest
         XCTAssertEqual(s("vacuum.a", "docked"), "Docked")
         XCTAssertEqual(s("lawn_mower.a", "mowing"), "Mowing")
         XCTAssertEqual(s("alarm_control_panel.a", "armed_home"), "Armed home")
-        XCTAssertEqual(s("alarm_control_panel.a", "armed_custom_bypass"), "Armed custom bypass")
+        XCTAssertEqual(s("alarm_control_panel.a", "armed_custom_bypass"), "Armed custom")
         XCTAssertEqual(s("number.a", "42.0", ["unit_of_measurement": "%"]), "42 %")
         XCTAssertEqual(s("number.a", "0.42"), "0.42")
         XCTAssertEqual(s("select.a", "ridiculous_speed"), "ridiculous_speed")

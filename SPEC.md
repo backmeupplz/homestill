@@ -55,7 +55,9 @@ only as one-line readings inside rooms.
        (options are in `data_schema[0].options`) and continue;
      - `{"type":"form","step_id":"mfa"}` → show a "Code" field (password and username hidden), post
        `{"client_id":…,"code":…}`; `errors.base == "invalid_code"` → "Wrong code.";
-     - `{"type":"abort"}` → show `reason`, restart from step 1.
+     - `{"type":"abort"}` → show `reason`, restart from step 1;
+     - anything else (e.g. `{"message":"Invalid flow specified"}` after HA restarted mid-flow) → show `message`, back
+       to the username and password fields (restart from step 1).
   3. `POST /auth/token` (form-urlencoded) `grant_type=authorization_code&code=…&client_id=…` →
      `{"access_token","expires_in":1800,"refresh_token","token_type":"Bearer"}`.
 - Store server base URL + refresh token only (iOS Keychain; Android app-private SharedPreferences). The access token and
@@ -92,6 +94,7 @@ only as one-line readings inside rooms.
 - Heartbeat: `{"type":"ping"}` every 20 s while connected; no `pong` within 10 s → reconnect.
 - Reconnect with backoff 1, 2, 4 … 30 s; immediately on returning to the foreground and on a network change (Android
   default-network callback, iOS `NWPathMonitor`). Each reconnect re-subscribes and refetches the three registries.
+  Camera cards follow the reconnect rule under "Cameras screen".
 - Debug builds only: a launch flag (`-badtoken 1` on iOS, intent extra `badtoken` on Android) that replaces the
   in-memory access token with `"x"` (future expiry) before the first connect, to exercise auth_invalid → refresh → connected.
   Android debug builds also take an intent extra `noservice` that drops every `call_service` (for looking at a real home).
@@ -196,6 +199,10 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
     `camera/stream` itself fails (the demo's cameras list `hls` but answer `start_stream_failed`), fall back to the
     snapshot refresh below.
   - otherwise: refresh the snapshot every 1 s.
+  - Socket drop and reconnect: a stream that is playing keeps playing through a drop (HLS is plain HTTP), and so does
+    the snapshot refresh of a card without a stream. When the socket is Live again, every card that isn't playing a
+    stream (snapshots only, still loading, stalled, or "Stream unavailable") asks for a stream again, with its one
+    retry restored. Coming back to the foreground does the same; in the background nothing plays.
   - Snapshot: `<base>` + `attributes.entity_picture` (it carries a `token=` query; no auth header). It may answer 500
     (some cameras can't make stills): then there's no poster.
 - Cards scrolled off screen stop their player. `unavailable` camera: dimmed card "Unavailable", no player.

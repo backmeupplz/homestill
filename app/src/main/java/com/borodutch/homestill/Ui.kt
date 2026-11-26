@@ -340,7 +340,7 @@ fun Detail(t: Tile) {
                     temp("Low", "target_temp_low") { range("target_temp_low", it) }
                     temp("High", "target_temp_high") { range("target_temp_high", it) }
                 }
-                Picker("Mode", s, a.strings("hvac_modes")) { call("set_hvac_mode", JSONObject().put("hvac_mode", it), flip = it) }
+                Picker("Mode", s, a.strings("hvac_modes"), ::label) { call("set_hvac_mode", JSONObject().put("hvac_mode", it), flip = it) }
                 if (has(16)) Picker("Preset", a.str("preset_mode"), a.strings("preset_modes")) { call("set_preset_mode", JSONObject().put("preset_mode", it)) }
                 if (has(8)) Picker("Fan", a.str("fan_mode"), a.strings("fan_modes")) { call("set_fan_mode", JSONObject().put("fan_mode", it)) }
             }
@@ -349,7 +349,7 @@ fun Detail(t: Tile) {
                 if (has(1)) Stepper("Target", a.num("temperature"), a.num("min_temp"), a.num("max_temp"), a.num("target_temp_step") ?: if (unit == "°F") 1.0 else 0.5, unit) {
                     call("set_temperature", JSONObject().put("temperature", it))
                 }
-                if (has(2)) Picker("Operation", a.str("operation_mode"), a.strings("operation_list")) { call("set_operation_mode", JSONObject().put("operation_mode", it)) }
+                if (has(2)) Picker("Operation", a.str("operation_mode"), a.strings("operation_list"), ::label) { call("set_operation_mode", JSONObject().put("operation_mode", it)) }
                 if (has(4)) SwitchRow("Away", a.str("away_mode") == "on") { call("set_away_mode", JSONObject().put("away_mode", it)) }
             }
             "humidifier" -> {
@@ -365,7 +365,7 @@ fun Detail(t: Tile) {
                     ("Next" to "media_next_track").takeIf { has(32) })) { call(it) }
                 if (has(4)) Ctl("Volume", ((a.num("volume_level") ?: 0.0) * 100).toFloat(), 0f..100f) { call("volume_set", JSONObject().put("volume_level", Math.round(it) / 100.0)) }
                 if (has(8)) SwitchRow("Mute", a.optBoolean("is_volume_muted")) { call("volume_mute", JSONObject().put("is_volume_muted", it)) }
-                if (has(2048)) Picker("Source", a.str("source"), a.strings("source_list"), { it }) { call("select_source", JSONObject().put("source", it)) }
+                if (has(2048)) Picker("Source", a.str("source"), a.strings("source_list")) { call("select_source", JSONObject().put("source", it)) }
             }
             "vacuum" -> {
                 Buttons(listOf("Start" to "start", "Pause" to "pause", "Return home" to "return_to_base", "Locate" to "locate").filterIndexed { i, _ -> has(intArrayOf(8192, 4, 16, 512)[i]) }) { call(it) }
@@ -393,8 +393,8 @@ fun Alarm(name: String, s: String, a: JSONObject, f: Int, call: (String, JSONObj
         keyboardOptions = KeyboardOptions(keyboardType = if (format == "number") KeyboardType.NumberPassword else KeyboardType.Password))
     val armOk = format == null || code.isNotEmpty() || !a.optBoolean("code_arm_required")
     Buttons(listOf("Arm home" to "alarm_arm_home", "Arm away" to "alarm_arm_away", "Arm night" to "alarm_arm_night", "Arm vacation" to "alarm_arm_vacation")
-        .filterIndexed { i, _ -> f and intArrayOf(1, 2, 4, 32)[i] != 0 }, armOk) { call(it, data(), null) }
-    if (s != "disarmed") Buttons(listOf("Disarm" to "alarm_disarm"), format == null || code.isNotEmpty()) { if (format == null) ask = true else call(it, data(), null) }
+        .filterIndexed { i, _ -> f and intArrayOf(1, 2, 4, 32)[i] != 0 }, armOk) { call(it, data(), null); code = "" }
+    if (s != "disarmed") Buttons(listOf("Disarm" to "alarm_disarm"), format == null || code.isNotEmpty()) { if (format == null) ask = true else { call(it, data(), null); code = "" } }
     if (ask) AlertDialog({ ask = false }, title = { Text("Disarm $name?") },
         confirmButton = { TextButton({ ask = false; call("alarm_disarm", JSONObject(), null) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Disarm") } },
         dismissButton = { TextButton({ ask = false }) { Text("Cancel") } })
@@ -421,15 +421,17 @@ fun SwitchRow(label: String, on: Boolean, set: (Boolean) -> Unit) {
 /** − value +: sends 600 ms after the last press, then follows the server again. */
 @Composable
 fun Stepper(label: String, server: Double?, min: Double?, max: Double?, step: Double, unit: String?, send: (Double) -> Unit) {
+    if (server == null || min == null || max == null || min >= max) return // SPEC: no target or bounds → no stepper
     var v by remember { mutableStateOf<Double?>(null) }
     var presses by remember { mutableIntStateOf(0) }
+    var pending by remember { mutableStateOf(false) }
     val latest by rememberUpdatedState(send) // the low/high pair reads the other end at send time
     LaunchedEffect(server) { v = null }
-    LaunchedEffect(presses) { if (presses > 0) { delay(600); v?.let(latest) } }
+    LaunchedEffect(presses) { if (presses > 0) { delay(600); pending = false; v?.let(latest) } }
+    DisposableEffect(Unit) { onDispose { if (pending) v?.let(latest) } } // the sheet closed within 600 ms
     fun bump(dir: Int) {
-        var n = snap((v ?: server ?: min ?: 0.0) + dir * step, step, min ?: 0.0)
-        min?.let { n = maxOf(n, it) }; max?.let { n = minOf(n, it) }
-        v = n; presses++
+        v = snap((v ?: server) + dir * step, step, min).coerceIn(min, max)
+        pending = true; presses++
     }
     Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
@@ -442,7 +444,7 @@ fun Stepper(label: String, server: Double?, min: Double?, max: Double?, step: Do
 
 /** A menu of strings that shows the current one. */
 @Composable
-fun Picker(label: String, current: String?, options: List<String>, show: (String) -> String = ::label, pick: (String) -> Unit) {
+fun Picker(label: String, current: String?, options: List<String>, show: (String) -> String = { it }, pick: (String) -> Unit) {
     if (options.isEmpty()) return
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

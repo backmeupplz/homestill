@@ -139,7 +139,7 @@ struct SettingsView: View {
 
     static func launch() {
         let d = UserDefaults.standard
-        if d.bool(forKey: "signout") { ha.signOut() }
+        if d.bool(forKey: "signout") { ha.signOut(revoke: false) } // tests never call a server but the demo
         if let s = d.string(forKey: "server"), let u = d.string(forKey: "user"), let p = d.string(forKey: "pass"), !ha.signedIn {
             Task { await ha.signIn(server: s, user: u, password: p) }
         }

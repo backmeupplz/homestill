@@ -28,6 +28,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -107,7 +108,7 @@ object Ha {
     private fun post(url: String, body: RequestBody) = exec(Request.Builder().url(url).post(body).build())
     private fun postJson(url: String, o: JSONObject): JSONObject {
         val (code, text) = post(url, o.toString().toRequestBody("application/json".toMediaType()))
-        return runCatching { JSONObject(text) }.getOrElse { throw Msg("Sign-in failed (HTTP $code).") }
+        return runCatching { JSONObject(text) }.getOrElse { mfa = false; throw Msg("Sign-in failed (HTTP $code).") } // only the login flow uses this
     }
 
     /** The first base URL that answers /auth/providers, checked for the username/password provider. */
@@ -155,7 +156,7 @@ object Ha {
                             else -> throw Msg(if (err == "invalid_auth") "Wrong username or password." else err ?: "Sign-in failed.")
                         }
                     }
-                    else -> throw Msg(r.optString("message").ifEmpty { "Sign-in failed." })
+                    else -> { mfa = false; throw Msg(r.optString("message").ifEmpty { "Sign-in failed." }) } // e.g. the flow is gone after an HA restart
                 }
             }
             val (code2, text) = post("$flowBase/auth/token", FormBody.Builder().add("grant_type", "authorization_code").add("code", r.getString("result")).add("client_id", CLIENT_ID).build())
@@ -169,6 +170,7 @@ object Ha {
                 connectNow()
             }
         } catch (e: IOException) { throw Msg("Can't reach that server (${e.message}).") }
+        catch (e: JSONException) { throw Msg("Unexpected answer from Home Assistant.") }
     }
 
     /** A usable access token (refreshed when missing or about to expire); null = the session ended (already signed out). Call off main. */
@@ -180,7 +182,7 @@ object Ha {
         if (code == 400) { // invalid_grant; anything else is a transient failure, not a sign-out
             main.post { if (base == b) signOut("Your session ended. Sign in again.") }; return null }
         if (code != 200) throw IOException("HTTP $code")
-        val t = JSONObject(text)
+        val t = runCatching { JSONObject(text).also { it.getString("access_token") } }.getOrElse { throw IOException("unexpected token reply") } // e.g. a proxy's login page
         access = t.getString("access_token"); expiresAt = System.currentTimeMillis() + t.optLong("expires_in", 1800) * 1000
         Log.i(TAG, "access token refreshed")
         return access
@@ -218,6 +220,7 @@ object Ha {
                     main.post { if (g == gen) handle(g, m) }
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { main.post { failed(g) } }
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { main.post { failed(g) } } // server closed: don't wait for its timeout
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { main.post { failed(g) } }
             })
         }

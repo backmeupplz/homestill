@@ -47,7 +47,6 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -109,25 +108,36 @@ fun CameraView(id: String, modifier: Modifier) {
     }
     var poster by remember(id) { mutableStateOf<ImageBitmap?>(null) }
     var url by remember(id) { mutableStateOf<String?>(null) }
-    var tries by remember(id) { mutableIntStateOf(0) }
+    var errors by remember(id) { mutableIntStateOf(0) } // playback errors since the last connect or foreground: one retry, then give up
+    var retry by remember(id) { mutableIntStateOf(0) } // bumped by the first playback error to ask for a new stream URL
     var failed by remember(id) { mutableStateOf(false) }
-    var playing by remember(id) { mutableStateOf(false) }
+    var playing by remember(id) { mutableStateOf(false) } // first frame shown: hides the poster
+    var running by remember(id) { mutableStateOf(false) } // the player's real state; false while it stalls or rebuffers
+    var asks by remember(id) { mutableIntStateOf(0) } // HA often returns the same URL: a new ask still gets a new player
     val fg = Ha.foreground // nothing plays in the background
-    LaunchedEffect(id, fg, tries) {
+    val live = Ha.status == Status.Live
+    var seen by remember(id) { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (fg, live) this effect last ran for
+    LaunchedEffect(id, fg, live, retry) {
+        if (seen != (fg to live)) { seen = fg to live; errors = 0; failed = false } // a reconnect or coming back gets a fresh try
+        if (!fg) { url = null; playing = false; return@LaunchedEffect }
+        // a socket drop keeps a stream that has started (HLS is plain HTTP); a reconnect asks again unless it's really playing
+        if (url != null && playing && (!live || running)) return@LaunchedEffect
         url = null; playing = false
-        if (!fg) return@LaunchedEffect
-        snapshotFlow { Ha.status }.first { it == Status.Live }
-        val caps = Ha.request(JSONObject().put("type", "camera/capabilities").put("entity_id", id)) as? JSONObject
-        val hls = caps?.strings("frontend_stream_types")?.contains("hls") == true
-        // `camera/stream` can fail even when hls is listed (cameras that only make stills): fall back to snapshots
-        url = if (hls) (Ha.request(JSONObject().put("type", "camera/stream").put("entity_id", id)) as? JSONObject)?.str("url")?.let { Ha.base + it } else null
+        if (live) {
+            val caps = Ha.request(JSONObject().put("type", "camera/capabilities").put("entity_id", id)) as? JSONObject
+            val hls = caps?.strings("frontend_stream_types")?.contains("hls") == true
+            // `camera/stream` can fail even when hls is listed (cameras that only make stills): fall back to snapshots
+            url = if (hls) (Ha.request(JSONObject().put("type", "camera/stream").put("entity_id", id)) as? JSONObject)?.str("url")?.let { Ha.base + it } else null
+            asks++
+        }
+        // no stream (none offered, it failed, or the socket is down): snapshots are plain HTTP and keep coming
         if (url == null) while (true) { snapshot(id)?.let { poster = it }; delay(1000) }
         else if (poster == null) poster = snapshot(id)
     }
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         if (!playing) poster?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-        url?.takeIf { !failed }?.let { u ->
-            key(u) { Live(u, Modifier.fillMaxSize(), { playing = true }) { if (tries == 0) tries++ else failed = true } }
+        url?.let { u ->
+            key(u, asks) { Live(u, Modifier.fillMaxSize(), { playing = true }, { running = it }) { playing = false; url = null; if (errors++ == 0) retry++ else failed = true } }
         }
         when {
             failed -> Text("Stream unavailable", color = Color.White)
@@ -150,7 +160,7 @@ private suspend fun snapshot(id: String): ImageBitmap? {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun Live(url: String, modifier: Modifier, onFrame: () -> Unit, onError: () -> Unit) {
+fun Live(url: String, modifier: Modifier, onFrame: () -> Unit, onPlaying: (Boolean) -> Unit, onError: () -> Unit) {
     val ctx = LocalContext.current
     val player = remember(url) {
         ExoPlayer.Builder(ctx)
@@ -166,12 +176,14 @@ fun Live(url: String, modifier: Modifier, onFrame: () -> Unit, onError: () -> Un
     val started = remember(url) { SystemClock.uptimeMillis() }
     val frame by rememberUpdatedState(onFrame)
     val error by rememberUpdatedState(onError)
+    val isPlaying by rememberUpdatedState(onPlaying)
     DisposableEffect(player) {
         player.addListener(object : Player.Listener {
             override fun onRenderedFirstFrame() { Log.i("Homestill", "first frame ${SystemClock.uptimeMillis() - started} ms after the stream URL"); frame() }
+            override fun onIsPlayingChanged(on: Boolean) = isPlaying(on)
             override fun onPlayerError(e: PlaybackException) = error()
         })
-        onDispose { player.release() }
+        onDispose { player.release(); isPlaying(false) }
     }
     AndroidView({ (LayoutInflater.from(it).inflate(R.layout.player, null) as PlayerView).also { v -> v.player = player } }, modifier, update = { it.player = player })
 }
