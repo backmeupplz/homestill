@@ -1,11 +1,13 @@
 # Homestill spec
 
-Homestill is a small, fast Home Assistant client that does two things: control devices and watch cameras. Native on both
+Homestill is a small, fast Home Assistant client that does two things: control devices (and glance at the readings in
+each room) and watch cameras. Native on both
 phones: Android at the repo root (`app/`, Kotlin, Jetpack Compose + Material 3) and iPhone in `ios/` (SwiftUI). Both apps
 follow this document; when a platform has to differ, it says so here. Sister apps whose layout and habits we copy:
 Spinwell (`~/code/spinwell-main`, the closest: Compose + SwiftUI, SPEC-driven) and ABS+ (`~/code/absplus`).
 
-No dashboards, history, sensors, automations, notifications, widgets, energy, map or settings editor.
+No dashboards, history, graphs, automations, notifications, widgets, energy, map or settings editor. Sensors appear
+only as one-line readings inside rooms.
 
 ## Platforms
 
@@ -92,11 +94,19 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
 
 ## What is shown
 
-- Entities from domains `light switch input_boolean fan cover lock button input_button scene script` on Home,
-  `camera` on Cameras. Everything else is ignored. Skip registry entries with `hb` (hidden) or `ec` set (config/diagnostic).
+- Home shows two kinds of entities (the domains in the table under "Home screen"); `camera` goes to Cameras. Every
+  other domain (person, zone, sun, update, event, calendar, text, date/time, tts, notify, …) is ignored. Skip registry
+  entries with `hb` (hidden) or `ec` set (config/diagnostic).
+  - Controls: `light switch input_boolean fan cover lock button input_button scene script siren remote valve
+    climate water_heater humidifier media_player vacuum lawn_mower alarm_control_panel`.
+  - Settings and readings: `number input_number select input_select sensor binary_sensor weather`. These are shown
+    only when they have an area and their state is not `unavailable`/`unknown` (a home is full of area-less backup
+    sensors and device knobs; an unavailable reading is noise). Sensors with `device_class` `timestamp` are skipped.
 - Area of an entity: its own `ai`, else its device's `area_id`, else none. Home lists areas in area-registry order
-  (only those with entities), then "Other" for entities without an area. Scenes and scripts go to a "Scenes" section
+  (only those with entities), then "Other" for controls without an area. Scenes and scripts go to a "Scenes" section
   at the top if they have no area.
+- Keep every attribute of a shown entity (no whitelist), in memory and in the snapshot cache: the controls below read
+  many of them. iOS keeps them as a `[String: Any]`-like JSON value (persisted as JSON), Android as the `JSONObject`.
 - Name: `attributes.friendly_name` (else the entity id). If it starts with the area name followed by a space (case
   insensitive) and something is left, drop that prefix ("Living Room Lights" in Living Room → "Lights"). Within a section
   sort by displayed name. Never derive anything from the entity id beyond its domain: ids and names can disagree.
@@ -107,9 +117,10 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
 
 - Top bar: title "Home", a gear → Settings. A slim banner under it when not connected: "Connecting…" or
   "Can't reach Home Assistant" (tap retries now). While not connected tiles are dimmed and taps do nothing.
-- Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). "On"-like tiles are
-  tinted: lights by their `rgb_color` when on (fallback amber, also for near-white colors, which would vanish on a light
-  background), other toggles by the accent color.
+- Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). Within a section,
+  controls first, then settings and readings, each sorted by name. "On"-like tiles are tinted: lights by their
+  `rgb_color` when on (fallback amber, also for near-white colors, which would vanish on a light background), other
+  controls by the accent color when active (column "Active" below). Readings are never tinted and not tappable.
 - `unavailable`/`unknown` state (except buttons/scenes/scripts, whose state is a timestamp or `unknown` by design): dimmed,
   state text "Unavailable", not tappable.
 - Tap behavior:
@@ -129,6 +140,37 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
   - fan: on/off + speed slider if `supported_features & 1` → `fan.set_percentage {"percentage"}`.
   - cover: Open / Stop / Close buttons (`cover.open_cover`/`stop_cover`/`close_cover`) + position slider if
     `supported_features & 4` → `cover.set_cover_position {"position"}`.
+### More devices
+
+The sheet is built from a few control kinds, the same on both platforms: switch, slider (sends like the light
+sliders), stepper (− value +, sends 600 ms after the last press), picker (menu of strings; shows the current one),
+action buttons (a row of tonal buttons), code field. `f` = `supported_features`; a row whose feature bit is missing,
+or whose list attribute is empty, is left out. Every call targets the tile's entity. Long-press (iOS: the same
+gesture as lights) opens the sheet for every domain that has one, also where a tap acts. The sheet's title is the
+name, its subtitle the state text, as for lights. Service names and feature bits
+were read from Home Assistant 2026.11.
+
+| Domain | State text | Active | Tap | Sheet |
+|---|---|---|---|---|
+| `siren` | On / Off | on | opens the sheet (no accidental alarms) | switch → `turn_on` / `turn_off` |
+| `remote` | On / Off | on | `remote.toggle` (optimistic) | none |
+| `valve` | Open / Closed / Opening / Closing + `current_position`% | open, opening | `valve.toggle` (optimistic open/closed) | Open / Stop / Close (f&1 `open_valve`, f&8 `stop_valve`, f&2 `close_valve`); position slider if f&4 → `set_valve_position {"position"}` |
+| `climate` | hvac mode label + ` · ` + `current_temperature` + unit ("Heat · 21.5 °C"; "Off · 19 °C") | state ≠ off | opens the sheet | header line: `hvac_action` label if present; target stepper if f&1 and mode isn't `heat_cool` → `set_temperature {"temperature"}`; low and high steppers if f&2 and mode is `heat_cool` → `set_temperature {"target_temp_low","target_temp_high"}` (both sent); mode picker (`hvac_modes`) → `set_hvac_mode {"hvac_mode"}`; preset picker if f&16 (`preset_modes`) → `set_preset_mode {"preset_mode"}`; fan picker if f&8 (`fan_modes`) → `set_fan_mode {"fan_mode"}`. Stepper bounds `min_temp`…`max_temp`, step `target_temp_step`, else 0.5 for °C and 1 for °F |
+| `water_heater` | `operation_mode` label + ` · ` + `temperature` + unit | state ≠ off | opens the sheet | switch if f&8 → `turn_on` / `turn_off`; target stepper if f&1 → `set_temperature {"temperature"}` (bounds/step as climate); operation picker if f&2 (`operation_list`) → `set_operation_mode {"operation_mode"}`; away switch if f&4 → `set_away_mode {"away_mode": bool}` |
+| `humidifier` | On · `humidity`% / Off | on | `humidifier.toggle` (optimistic) | switch; target slider `min_humidity`…`max_humidity` (step `target_humidity_step`, else 1) → `set_humidity {"humidity"}`; mode picker if f&1 (`available_modes`) → `set_mode {"mode"}` |
+| `media_player` | `media_title` when playing/paused, else the state label (Off, Idle, On, Standby, Buffering) | playing | playing/paused → `media_play_pause`; off with f&128 → `turn_on`; else opens the sheet | title + `media_artist` lines; Previous / Play-pause / Next (f&16, f&1 or f&16384, f&32); volume slider 0–100 if f&4 → `volume_set {"volume_level": v/100}`; mute switch if f&8 → `volume_mute {"is_volume_muted"}`; power switch if f&128 or f&256 → `turn_on` / `turn_off`; source picker if f&2048 (`source_list`) → `select_source {"source"}` |
+| `vacuum` | state label (Docked, Cleaning, Returning, Paused, Idle, Error) | cleaning | cleaning → `pause` if f&4, else `return_to_base`; otherwise `start` if f&8192 | Start (f&8192) / Pause (f&4) / Return home (f&16) / Locate (f&512) → `start` / `pause` / `return_to_base` / `locate`; fan speed picker if f&32 (`fan_speed_list`) → `set_fan_speed {"fan_speed"}` |
+| `lawn_mower` | Docked / Mowing / Paused / Returning / Error | mowing | mowing → `pause` if f&2; otherwise `start_mowing` if f&1 | Start (f&1) / Pause (f&2) / Dock (f&4) → `start_mowing` / `pause` / `dock` |
+| `alarm_control_panel` | Disarmed / Armed home / Armed away / Armed night / Armed vacation / Armed custom / Arming / Pending / Triggered / Disarming | any armed state, triggered (red) | opens the sheet (never acts) | code field when `code_format` is set (number pad for `"number"`); action buttons Arm home (f&1), Arm away (f&2), Arm night (f&4), Arm vacation (f&32), and Disarm when not disarmed → `alarm_arm_home` / `alarm_arm_away` / `alarm_arm_night` / `alarm_arm_vacation` / `alarm_disarm`, with `{"code"}` when a code was typed. Disarm needs the code when `code_format` is set; with no code, Disarm asks "Disarm <name>?" first (like unlock). Arming needs the code only when `code_arm_required`. The code is never stored |
+| `number`, `input_number` | value + ` ` + `unit_of_measurement` | never | opens the sheet | slider `min`…`max`, step `step` → `set_value {"value"}` |
+| `select`, `input_select` | current option | never | opens a menu of `options` (no sheet) | → `select_option {"option"}` |
+| `sensor` | numbers rounded to the registry's display precision (`dp` in `list_for_display`), else as sent, + ` ` + `unit_of_measurement`; other states as sent | never | none | none |
+| `binary_sensor` | by `device_class`: door, window, opening, garage_door → Open / Closed; motion, occupancy, presence → Detected / Clear; moisture → Wet / Dry; smoke, gas, carbon_monoxide, problem, safety, tamper → Detected / OK; lock → Unlocked / Locked; battery → Low / OK; connectivity → Connected / Disconnected; else On / Off | never | none | none |
+| `weather` | condition label ("partlycloudy" → "Partly cloudy", "clear-night" → "Clear night", else capitalized) + ` · ` + `temperature` + `temperature_unit` | never | none | none |
+
+State labels are the state with `_` → space, first letter capitalized, unless given above. Icons: one plain glyph per
+domain (binary sensors and sensors may pick by `device_class` where a glyph exists; no icon library).
+
 - Optimistic update: flip `s` locally at once; if the server's state hasn't confirmed within 5 s (or the call fails),
   put back the last server state.
 
@@ -148,6 +190,15 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
 - Cards scrolled off screen stop their player. `unavailable` camera: dimmed card "Unavailable", no player.
 - Tap a card → full-screen live view of that camera (black background, aspect-fit, pinch to zoom, rotates to landscape,
   close button / back). Same player logic. (iOS allows landscape app-wide, so Home and Cameras rotate too.)
+- Pan / tilt (full-screen view only): a camera can move when its registry platform (`pl` in `list_for_display`) is
+  `onvif`, or when it is the only shown camera in its area and that area holds a hidden (`hb`) `onvif` camera. The
+  second case is how a real home does it: Home Assistant's ONVIF stream can fail (a Tapo C210 whose password has
+  special characters is refused by its RTSP server) while another integration streams the same camera fine, so the
+  ONVIF camera is kept hidden and only moves it. A movable camera shows four arrow buttons (a translucent pad in the
+  bottom corner, 44 pt/dp targets). Each tap sends one nudge to the `onvif` entity:
+  `onvif.ptz {"pan":"LEFT"|"RIGHT"}` or `{"tilt":"UP"|"DOWN"}` with `"move_mode":"ContinuousMove","speed":0.5,
+  "continuous_duration":1`. Tap only, no hold: the picture lags ~2 s, so holding overshoots. RelativeMove is not used:
+  the C210 rejects it. No zoom buttons (pinch is the zoom).
 
 ## Settings
 
@@ -156,9 +207,14 @@ No dashboards, history, sensors, automations, notifications, widgets, energy, ma
 ## Tests and checks
 
 - Unit tests (pure logic, no network): applying `subscribe_entities` events (a/c/r merging), building the Home model
-  (domain filter, hidden/category skip, area resolution entity→device→Other, prefix stripping, sort), lock tap decision,
-  token-needs-refresh decision. Android JUnit (`testDebugUnitTest`), iOS XCTest target `HomestillTests`.
+  (domain filter, hidden/category skip, area resolution entity→device→Other, readings only with an area and a state,
+  controls before readings, prefix stripping, sort), state texts for the table above, tap decisions (lock, vacuum,
+  media player, alarm never acting), the pan/tilt camera rule (own `onvif`; hidden `onvif` in the area of the only
+  shown camera; two shown cameras in that area → none), token-needs-refresh decision. Android JUnit
+  (`testDebugUnitTest`), iOS XCTest target `HomestillTests`.
 - Control testing happens only against the throwaway demo server (`tools/demo-ha.sh`: Docker Home Assistant with the
-  `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). The real home server
+  `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). Its rooms hold one of
+  most domains above, and a stub `onvif` integration adds `camera.gate_camera` (Garden) whose `onvif.ptz` service
+  stores the last call's data in the camera's `last_ptz` attribute. The real home server
   (`https://home.icefish-betta.ts.net`) holds real door locks and lights people are using: sign in, look, and watch the
   cameras, but never call a service on it from tests.
