@@ -46,6 +46,10 @@ a{color:var(--accent)}
 h1{font-size:clamp(36px,6vw,60px);line-height:1.06;letter-spacing:-.03em;font-weight:800;text-wrap:balance}
 .lead{color:var(--dim);font-size:20px;margin-top:24px;max-width:36em}
 .status{display:inline-block;margin-top:28px;padding:12px 18px;border-radius:14px;background:var(--tint);border:1px solid var(--line);font-size:17px}
+.buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+.btn{display:inline-block;padding:12px 20px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;font-weight:600;text-decoration:none}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg)}
 section{padding:48px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px 48px}
 h2{font-size:clamp(26px,3.4vw,34px);line-height:1.15;letter-spacing:-.02em;text-wrap:balance}
 section p{color:var(--dim)}
@@ -66,7 +70,8 @@ footer{padding:32px 0 56px;border-top:1px solid var(--line);color:var(--dim);fon
 <div class="hero">
   <h1>A fast Home Assistant app for controls and live cameras</h1>
   <p class="lead">Homestill is a native Android and iPhone app for your own Home Assistant server that sticks to device controls and camera feeds, leaving out dashboards, history, automations and settings editing.</p>
-  <p class="status">Homestill is currently in testing with no public download yet, and it is coming to the App Store and Google Play.</p>
+  <p class="status">Homestill 1.0.0 is free and open source under the MIT license, available now for Android on Google Play and as a signed APK download, and coming to the App Store for iPhone.</p>
+  <p class="buttons"><a class="btn primary" href="https://play.google.com/store/apps/details?id=com.borodutch.homestill">Get it on Google Play</a><a class="btn" href="https://github.com/backmeupplz/homestill/releases/latest/download/homestill.apk">Download Android APK</a><a class="btn" href="https://github.com/backmeupplz/homestill">Source on GitHub</a></p>
 </div>
 
 <section id="controls" aria-labelledby="controls-h">
@@ -81,7 +86,7 @@ footer{padding:32px 0 56px;border-top:1px solid var(--line);color:var(--dim);fon
 
 <section id="speed-and-privacy" aria-labelledby="speed-h">
   <h2 id="speed-h">Built native for speed and privacy</h2>
-  <p>Homestill is written natively in Kotlin with Jetpack Compose on Android (a 4.2 MB download) and SwiftUI on iPhone with no third-party libraries. When you open the app, it draws the last known state of your home at once, runs everything over a single WebSocket to your server, and updates each tile the moment you tap instead of waiting for a round trip. You sign in with your Home Assistant address, username and password right inside the app, with two-factor codes supported and no browser needed, and the phone stores only a refresh token. There is no account to create, no analytics and no tracking, because Homestill talks only to your own Home Assistant server.</p>
+  <p>Homestill is written natively in Kotlin with Jetpack Compose on Android (a 4.2 MB download) and SwiftUI on iPhone with no third-party libraries. When you open the app, it draws the last known state of your home at once, runs everything over a single WebSocket to your server, and updates each tile the moment you tap instead of waiting for a round trip. You sign in with your Home Assistant address, username and password right inside the app, with two-factor codes supported and no browser needed, and the phone stores only a refresh token. There is no account to create, no analytics and no tracking, because Homestill talks only to your own Home Assistant server, and the app is free and open source under the MIT license.</p>
 </section>
 
 <div class="shots">
@@ -90,7 +95,7 @@ footer{padding:32px 0 56px;border-top:1px solid var(--line);color:var(--dim);fon
 </div>
 </main>
 <footer>
-  <p>Homestill is an independent app made by Nikita Kolmogorov and is not affiliated with Home Assistant.</p>
+  <p>Homestill is an independent, free, open-source app made by Nikita Kolmogorov under the MIT license, and it is not affiliated with Home Assistant.</p>
   <a href="https://github.com/backmeupplz/homestill/issues">Support</a> · <a href="/privacy/">Privacy policy</a> · <a href="/llms.txt">llms.txt</a>
 </footer>
 </div>
