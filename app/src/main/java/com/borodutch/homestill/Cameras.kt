@@ -15,7 +15,9 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -79,6 +81,21 @@ fun FullCamera(id: String, onClose: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black).transformable(zoom)) {
         CameraView(id, Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y })
         IconButton(onClose, Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(8.dp)) { Icon(Ic.Close, "Close", tint = Color.White) }
+        Ha.ptz[id]?.let { PtzPad(it, Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(16.dp)) }
+    }
+}
+
+/** Four arrows; each tap nudges the onvif camera [target] for 1 s (tap only: the picture lags, so holding would overshoot). */
+@Composable
+fun PtzPad(target: String, modifier: Modifier) {
+    fun nudge(k: String, v: String) = Ha.call("onvif", "ptz", target,
+        JSONObject().put(k, v).put("move_mode", "ContinuousMove").put("speed", 0.5).put("continuous_duration", 1))
+    Box(modifier.size(132.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))) {
+        for ((at, turn, move) in listOf(Triple(Alignment.TopCenter, 0f, "tilt" to "UP"), Triple(Alignment.CenterEnd, 90f, "pan" to "RIGHT"),
+            Triple(Alignment.BottomCenter, 180f, "tilt" to "DOWN"), Triple(Alignment.CenterStart, 270f, "pan" to "LEFT")))
+            IconButton({ nudge(move.first, move.second) }, Modifier.align(at).size(44.dp)) {
+                Icon(Ic.Up, move.second.lowercase(), Modifier.rotate(turn), tint = Color.White)
+            }
     }
 }
 

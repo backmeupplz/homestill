@@ -33,7 +33,15 @@ struct Root: View {
                 }
             }
         }
-        .overlay(alignment: .bottom) {
+        .toast()
+        .animation(.smooth, value: ha.signedIn)
+    }
+}
+
+extension View {
+    /// The error toast; sheets and the full-screen camera cover Root, so they show it too.
+    func toast() -> some View {
+        overlay(alignment: .bottom) {
             if let t = ha.toast {
                 Text(t).font(.subheadline).padding(.horizontal, 16).padding(.vertical, 10)
                     .glassEffect(.regular, in: .capsule).padding(.bottom, 90).padding(.horizontal, 24)
@@ -41,7 +49,6 @@ struct Root: View {
             }
         }
         .animation(.smooth, value: ha.toast)
-        .animation(.smooth, value: ha.signedIn)
     }
 }
 

@@ -68,6 +68,7 @@ object Ha {
     val pending = mutableStateMapOf<String, Pending>()
     var sections by mutableStateOf(listOf<Section>()); private set
     var cams by mutableStateOf(listOf<Tile>()); private set
+    var ptz by mutableStateOf(mapOf<String, String>()); private set // camera → the onvif entity that pans/tilts it
     private var reg: Map<String, Reg>? = null
     private var devArea: Map<String, String?>? = null
     private var areas: List<Pair<String, String>>? = null
@@ -190,7 +191,7 @@ object Ha {
         if (why == null && b != null && r != null) scope.launch(Dispatchers.IO) { runCatching { post("$b/auth/token", FormBody.Builder().add("token", r).add("action", "revoke").build()) } }
         close(); prefs.edit().clear().apply(); cacheFile.delete()
         base = null; refresh = null; access = null; expiresAt = 0; user = ""; notice = why
-        ents.clear(); pending.clear(); sections = emptyList(); cams = emptyList(); reg = null; devArea = null; areas = null
+        ents.clear(); pending.clear(); sections = emptyList(); cams = emptyList(); ptz = emptyMap(); reg = null; devArea = null; areas = null
     }
 
     // ---- socket ----
@@ -276,6 +277,7 @@ object Ha {
         if (fresh) return
         sections = buildHome(ents, r, d, a)
         cams = buildCameras(ents, r)
+        ptz = ptzTargets(cams, r, d, a)
         if (!synced) { synced = true; saveCache() }
     }
 
@@ -312,17 +314,15 @@ object Ha {
 
     // ---- snapshot cache: draw the last known home at once on launch ----
 
-    private val keepAttrs = listOf("friendly_name", "brightness", "rgb_color", "current_position", "percentage", "supported_color_modes", "supported_features",
-        "min_color_temp_kelvin", "max_color_temp_kelvin", "color_temp_kelvin", "hs_color", "entity_picture")
-
     private fun saveCache() {
         val shown = sections.flatMap { it.tiles } + cams
         if (shown.isEmpty()) return
         val o = JSONObject()
-        o.put("sections", JSONArray(sections.map { s -> JSONObject().put("t", s.title).put("tiles", JSONArray(s.tiles.map { JSONArray().put(it.id).put(it.name) })) }))
-        o.put("cams", JSONArray(cams.map { JSONArray().put(it.id).put(it.name) }))
+        fun tile(t: Tile) = JSONArray().put(t.id).put(t.name).apply { t.dp?.let { put(it) } }
+        o.put("sections", JSONArray(sections.map { s -> JSONObject().put("t", s.title).put("tiles", JSONArray(s.tiles.map(::tile))) }))
+        o.put("cams", JSONArray(cams.map(::tile)))
         val e = JSONObject()
-        for (t in shown) ents[t.id]?.let { x -> e.put(t.id, JSONObject().put("s", x.s).put("a", JSONObject().apply { for (k in keepAttrs) if (x.a.has(k)) put(k, x.a.get(k)) })) }
+        for (t in shown) ents[t.id]?.let { x -> e.put(t.id, JSONObject().put("s", x.s).put("a", x.a)) }
         o.put("ents", e)
         val text = o.toString()
         scope.launch(Dispatchers.IO) { runCatching { cacheFile.writeText(text) } }
@@ -330,7 +330,7 @@ object Ha {
 
     private fun loadCache() = runCatching {
         val o = JSONObject(cacheFile.readText())
-        fun tiles(a: JSONArray) = List(a.length()) { a.getJSONArray(it).let { t -> Tile(t.getString(0), t.getString(1)) } }
+        fun tiles(a: JSONArray) = List(a.length()) { a.getJSONArray(it).let { t -> Tile(t.getString(0), t.getString(1), if (t.length() > 2) t.getInt(2) else null) } }
         val e = o.getJSONObject("ents")
         for (id in e.keys()) e.getJSONObject(id).let { ents[id] = Ent(it.getString("s"), it.getJSONObject("a")) }
         val s = o.getJSONArray("sections")

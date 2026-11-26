@@ -10,9 +10,9 @@ class ModelTest {
 
     @Test fun addChangeRemove() {
         val m = ents("""{"a":{"light.a":{"s":"off","a":{"friendly_name":"A","brightness":null,"effect":"x"},"c":"1","lc":1},
-            "sensor.t":{"s":"20","a":{}},"camera.c":{"s":"idle","a":{}}}}""")
+            "person.t":{"s":"home","a":{}},"camera.c":{"s":"idle","a":{}}}}""")
         assertEquals(setOf("light.a", "camera.c"), m.keys) // other domains dropped
-        val t = applyEvent(m, JSONObject("""{"c":{"light.a":{"+":{"s":"on","a":{"brightness":255},"lc":2},"-":{"a":["effect"]}},"sensor.t":{"+":{"s":"21"}}}}"""))
+        val t = applyEvent(m, JSONObject("""{"c":{"light.a":{"+":{"s":"on","a":{"brightness":255},"lc":2},"-":{"a":["effect"]}},"person.t":{"+":{"s":"away"}}}}"""))
         assertEquals(setOf("light.a"), t)
         val a = m["light.a"]!!
         assertEquals("on", a.s)
@@ -54,6 +54,110 @@ class ModelTest {
         assertEquals(listOf("Lights", "living room", "Movie"), home[2].tiles.map { it.name }) // prefix stripped only when something is left
         assertEquals(listOf("cover.nobody", "lock.door"), home[3].tiles.map { it.id }) // name falls back to the id; sorted by name
         assertEquals(listOf("camera.cam"), buildCameras(m, reg).map { it.id })
+    }
+
+    @Test fun readings() {
+        val m = ents("""{"a":{
+            "sensor.temp":{"s":"21.46","a":{"friendly_name":"Kitchen Temperature","unit_of_measurement":"°C"}},
+            "sensor.nowhere":{"s":"5","a":{"friendly_name":"Nowhere"}},
+            "sensor.dead":{"s":"unavailable","a":{"friendly_name":"Dead"}},
+            "sensor.unknown":{"s":"unknown","a":{"friendly_name":"Unknown"}},
+            "sensor.dawn":{"s":"2026-11-26T22:24:47+00:00","a":{"friendly_name":"Dawn","device_class":"timestamp"}},
+            "binary_sensor.door":{"s":"on","a":{"friendly_name":"A door","device_class":"door"}},
+            "select.mode":{"s":"fast","a":{"friendly_name":"Mode"}},
+            "switch.z":{"s":"off","a":{"friendly_name":"Zz switch"}},
+            "climate.ac":{"s":"cool","a":{"friendly_name":"Air"}},
+            "media_player.tv":{"s":"off","a":{"friendly_name":"TV"}},
+            "sensor.nowhere_dead":{"s":"unavailable","a":{}}}}""")
+        val reg = parseEntityReg(JSONObject("""{"entities":[
+            {"ei":"sensor.temp","ai":"k","dp":1},{"ei":"sensor.dead","ai":"k"},{"ei":"sensor.unknown","ai":"k"},{"ei":"sensor.dawn","ai":"k"},
+            {"ei":"binary_sensor.door","ai":"k"},{"ei":"select.mode","ai":"k"},{"ei":"switch.z","ai":"k"},{"ei":"climate.ac","ai":"k"}]}"""))
+        val home = buildHome(m, reg, emptyMap(), listOf("k" to "Kitchen"))
+        assertEquals(listOf("Kitchen", "Other"), home.map { it.title })
+        // controls first (by name), then readings (by name); unavailable, unknown and timestamp readings skipped
+        assertEquals(listOf("climate.ac", "switch.z", "binary_sensor.door", "select.mode", "sensor.temp"), home[0].tiles.map { it.id })
+        assertEquals(Tile("sensor.temp", "Temperature", 1), home[0].tiles.last())
+        assertEquals(listOf("media_player.tv"), home[1].tiles.map { it.id }) // area-less readings never go to Other
+    }
+
+    @Test fun ptz() {
+        val reg = parseEntityReg(JSONObject("""{"entities":[
+            {"ei":"camera.own","pl":"onvif"},
+            {"ei":"camera.front","pl":"generic","ai":"front"},{"ei":"camera.front_onvif","pl":"onvif","ai":"front","hb":true},
+            {"ei":"camera.yard1","pl":"generic","di":"d1"},{"ei":"camera.yard2","pl":"generic","ai":"yard"},{"ei":"camera.yard_onvif","pl":"onvif","ai":"yard","hb":true},
+            {"ei":"camera.hall","pl":"generic","ai":"hall"},{"ei":"camera.hall_other","pl":"generic","ai":"hall","hb":true}]}"""))
+        val dev = mapOf("d1" to "yard")
+        val areas = listOf("front" to "Front", "yard" to "Yard", "hall" to "Hall")
+        val m = ents("""{"a":{${reg.keys.joinToString(",") { "\"$it\":{\"s\":\"idle\",\"a\":{}}" }}}}""")
+        val cams = buildCameras(m, reg)
+        assertEquals(listOf("camera.front", "camera.hall", "camera.own", "camera.yard1", "camera.yard2"), cams.map { it.id }) // hidden ones not shown
+        // own onvif; the only shown camera in an area with a hidden onvif one; two shown cameras in that area → none; hidden non-onvif → none
+        assertEquals(mapOf("camera.own" to "camera.own", "camera.front" to "camera.front_onvif"), ptzTargets(cams, reg, dev, areas))
+    }
+
+    @Test fun taps() {
+        assertEquals("toggle", tapAction("valve", "open", 0))
+        assertEquals(SHEET, tapAction("climate", "heat", 0))
+        assertEquals(SHEET, tapAction("siren", "off", 3))
+        assertEquals(MENU, tapAction("select", "a", 0))
+        assertNull(tapAction("sensor", "1", 0))
+        // vacuum
+        assertEquals("pause", tapAction("vacuum", "cleaning", 4 or 8192))
+        assertEquals("return_to_base", tapAction("vacuum", "cleaning", 16))
+        assertEquals("start", tapAction("vacuum", "docked", 8192))
+        assertEquals(SHEET, tapAction("vacuum", "docked", 4)) // can't start from a tap: the sheet instead
+        // lawn mower
+        assertEquals("pause", tapAction("lawn_mower", "mowing", 3))
+        assertEquals("start_mowing", tapAction("lawn_mower", "docked", 1))
+        // media player
+        assertEquals("media_play_pause", tapAction("media_player", "playing", 0))
+        assertEquals("media_play_pause", tapAction("media_player", "paused", 0))
+        assertEquals("turn_on", tapAction("media_player", "off", 128))
+        assertEquals(SHEET, tapAction("media_player", "off", 0))
+        assertEquals(SHEET, tapAction("media_player", "idle", 128))
+        // alarm never acts
+        for (s in listOf("disarmed", "armed_home", "armed_away", "triggered", "arming", "pending")) assertEquals(SHEET, tapAction("alarm_control_panel", s, 63))
+        assertEquals("closed", optimistic("valve", "open"))
+        assertEquals("open", optimistic("valve", "closed"))
+        assertEquals("off", optimistic("remote", "on"))
+        assertNull(optimistic("vacuum", "docked"))
+        assertTrue(active("alarm_control_panel", "armed_night")); assertTrue(active("alarm_control_panel", "triggered"))
+        assertFalse(active("alarm_control_panel", "disarmed")); assertFalse(active("binary_sensor", "on"))
+        assertTrue(active("climate", "heat")); assertFalse(active("climate", "off"))
+        assertTrue(active("valve", "opening")); assertTrue(active("vacuum", "cleaning")); assertFalse(active("media_player", "paused"))
+    }
+
+    @Test fun moreTexts() {
+        fun t(d: String, s: String, a: String = "{}", dp: Int? = null) = stateText(d, s, JSONObject(a), dp)
+        assertEquals("On", t("siren", "on"))
+        assertEquals("Opening · 30%", t("valve", "opening", """{"current_position":30}"""))
+        assertEquals("Heat · 21.5 °C", t("climate", "heat", """{"current_temperature":21.5,"temperature_unit":"°C"}"""))
+        assertEquals("Off · 19 °C", t("climate", "off", """{"current_temperature":19.0,"temperature_unit":"°C"}"""))
+        assertEquals("Heat cool", t("climate", "heat_cool", """{"current_temperature":null}"""))
+        assertEquals("Heat pump · 48.3 °C", t("water_heater", "heat_pump", """{"operation_mode":"heat_pump","temperature":48.3,"temperature_unit":"°C"}"""))
+        assertEquals("On · 65%", t("humidifier", "on", """{"humidity":65}""")); assertEquals("Off", t("humidifier", "off", """{"humidity":65}"""))
+        assertEquals("Song", t("media_player", "paused", """{"media_title":"Song"}"""))
+        assertEquals("Standby", t("media_player", "standby", """{"media_title":"Song"}"""))
+        assertEquals("Docked", t("vacuum", "docked")); assertEquals("Mowing", t("lawn_mower", "mowing"))
+        assertEquals("Armed home", t("alarm_control_panel", "armed_home")); assertEquals("Armed custom", t("alarm_control_panel", "armed_custom_bypass"))
+        assertEquals("42 %", t("number", "42.0", """{"unit_of_measurement":"%"}""")); assertEquals("0.42", t("number", "0.42"))
+        assertEquals("ridiculous_speed", t("select", "ridiculous_speed"))
+        assertEquals("21.5 °C", t("sensor", "21.46", """{"unit_of_measurement":"°C"}""", 1))
+        assertEquals("100 W", t("sensor", "99.6", """{"unit_of_measurement":"W"}""", 0))
+        assertEquals("21.46 °C", t("sensor", "21.46", """{"unit_of_measurement":"°C"}"""))
+        assertEquals("eco", t("sensor", "eco"))
+        assertEquals("Open", t("binary_sensor", "on", """{"device_class":"garage_door"}"""))
+        assertEquals("Clear", t("binary_sensor", "off", """{"device_class":"motion"}"""))
+        assertEquals("Wet", t("binary_sensor", "on", """{"device_class":"moisture"}"""))
+        assertEquals("OK", t("binary_sensor", "off", """{"device_class":"smoke"}"""))
+        assertEquals("Disconnected", t("binary_sensor", "off", """{"device_class":"connectivity"}"""))
+        assertEquals("On", t("binary_sensor", "on", """{"device_class":"battery_charging"}"""))
+        assertEquals("Partly cloudy · 21.6 °C", t("weather", "partlycloudy", """{"temperature":21.6,"temperature_unit":"°C"}"""))
+        assertEquals("Clear night", t("weather", "clear-night"))
+        assertEquals("Sunny", t("weather", "sunny")); assertEquals("Lightning rainy", t("weather", "lightning-rainy"))
+        assertEquals(0.42, snap(0.4213, 0.01), 0.0)
+        assertEquals(21.5, snap(21.3, 0.5), 0.0)
+        assertEquals(7.0, snap(6.6, 1.0, 1.0), 0.0)
     }
 
     @Test fun lock() {

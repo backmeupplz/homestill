@@ -59,6 +59,28 @@ final class DemoUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
     }
 
+    /// The demo's stub `onvif` camera: its full-screen view shows the pan/tilt pad. Each tap calls `onvif.ptz`, which the
+    /// stub keeps in the camera's `last_ptz` attribute (check it over REST: this test can't read it).
+    func testPanTilt() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass",
+                               "-tab", "cameras"]
+        app.launch()
+        let card = app.descendants(matching: .any)["camera.gate_camera"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 20))
+        card.tap()
+        let up = app.buttons["Tilt up"]
+        XCTAssertTrue(up.waitForExistence(timeout: 5))
+        for b in ["Pan left", "Pan right", "Tilt down"] { XCTAssertTrue(app.buttons[b].isHittable, b) }
+        up.tap()
+        sleep(1)
+        app.buttons["Close"].tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["camera.demo_camera"].firstMatch.tap() // a camera that can't move has no pad
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Tilt up"].exists)
+    }
+
     func testTapAndScroll() {
         let app = XCUIApplication()
         app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass"]
@@ -77,7 +99,9 @@ final class DemoUITests: XCTestCase {
         sleep(2)
         XCTAssertTrue(tile.label.contains(back), tile.label)
         tile.swipeUp(velocity: .fast) // starting on a tile: its tap/long-press gestures must not block scrolling
-        app.swipeUp(velocity: .fast)
-        XCTAssertTrue(app.descendants(matching: .any)["lock.front_door"].firstMatch.isHittable, "Home scrolls to Other")
+        XCTAssertFalse(tile.exists && tile.isHittable, "a swipe starting on a tile scrolls")
+        let lock = app.descendants(matching: .any)["lock.front_door"].firstMatch
+        for _ in 0..<8 where !(lock.exists && lock.isHittable) { app.swipeUp(velocity: .fast) }
+        XCTAssertTrue(lock.isHittable, "Home scrolls to Other")
     }
 }

@@ -51,8 +51,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -185,35 +187,47 @@ fun EntityTile(t: Tile, live: Boolean, onSheet: () -> Unit, onConfirm: () -> Uni
     val d = domain(t.id)
     val s = Ha.pending[t.id]?.s ?: e.s
     val off = unavailable(d, s)
-    val on = !off && (s == "on" || s == "open" || s == "opening" || s == "unlocked" || s == "unlocking")
-    val accent = if (d == "light") lightColor(e.a) else MaterialTheme.colorScheme.primary
+    val on = !off && active(d, s)
+    val accent = when {
+        d == "light" -> lightColor(e.a)
+        s == "triggered" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val tap = tapAction(d, s, e.a.optInt("supported_features"))
+    var menu by remember { mutableStateOf(false) }
     val flash = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val base = MaterialTheme.colorScheme.surfaceContainerHigh
-    Column(
-        Modifier.clip(RoundedCornerShape(20.dp))
-            .background(if (on) accent.copy(alpha = 0.22f).compositeOver(base) else base)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f * flash.value))
-            .alpha(if (off) 0.45f else 1f)
-            .combinedClickable(enabled = live && !off, onLongClick = if (d == "light" || d == "fan" || d == "cover") onSheet else null) {
-                when (d) {
-                    "lock" -> lockTap(s)?.let { (svc, ask) -> if (ask) onConfirm() else Ha.call("lock", svc, t.id, flip = optimistic(d, s)) }
-                    "button", "input_button" -> Ha.call(d, "press", t.id)
-                    "scene", "script" -> Ha.call(d, "turn_on", t.id)
-                    else -> Ha.call(d, "toggle", t.id, flip = optimistic(d, s))
+    Box {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .background(if (on) accent.copy(alpha = 0.22f).compositeOver(base) else base)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f * flash.value))
+                .alpha(if (off) 0.45f else 1f)
+                .combinedClickable(enabled = live && !off && (d == "lock" || tap != null || d in SHEETS), onLongClick = if (d in SHEETS) onSheet else null) {
+                    when {
+                        d == "lock" -> lockTap(s)?.let { (svc, ask) -> if (ask) onConfirm() else Ha.call("lock", svc, t.id, flip = optimistic(d, s)) }
+                        tap == SHEET -> onSheet()
+                        tap == MENU -> menu = true
+                        tap != null -> Ha.call(d, tap, t.id, flip = optimistic(d, s))
+                    }
+                    if (d in ACTION_DOMAINS) scope.launch { flash.snapTo(1f); flash.animateTo(0f, tween(700)) }
                 }
-                if (d in ACTION_DOMAINS) scope.launch { flash.snapTo(1f); flash.animateTo(0f, tween(700)) }
-            }
-            .padding(14.dp),
-    ) {
-        Icon(icon(d, s), null, tint = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(10.dp))
-        Text(t.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(stateText(d, s, e.a), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                .padding(14.dp),
+        ) {
+            Icon(icon(d, s, e.a), null, tint = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(10.dp))
+            Text(t.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stateText(d, s, e.a, t.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
+        }
+        if (tap == MENU) DropdownMenu(menu, { menu = false }) {
+            for (o in e.a.strings("options")) DropdownMenuItem({ Text(o) }, { menu = false; Ha.call(d, "select_option", t.id, JSONObject().put("option", o), flip = o) })
+        }
     }
 }
 
-fun icon(d: String, s: String) = when (d) {
+fun icon(d: String, s: String, a: JSONObject) = when (d) {
     "light" -> Ic.Bulb
     "fan" -> Ic.Fan
     "cover" -> Ic.Window
@@ -221,23 +235,56 @@ fun icon(d: String, s: String) = when (d) {
     "button", "input_button" -> Ic.Button
     "scene" -> Ic.Scene
     "script" -> Ic.Script
+    "climate", "water_heater" -> Ic.Thermo
+    "valve", "humidifier" -> Ic.Drop
+    "media_player" -> Ic.Music
+    "vacuum" -> Ic.Vacuum
+    "lawn_mower" -> Ic.Grass
+    "alarm_control_panel" -> Ic.Shield
+    "siren" -> Ic.Bell
+    "number", "input_number" -> Ic.Tune
+    "select", "input_select" -> Ic.List
+    "weather" -> Ic.Cloud
+    "sensor", "binary_sensor" -> when (a.str("device_class")) {
+        "temperature" -> Ic.Thermo
+        "humidity", "moisture" -> Ic.Drop
+        "door", "window", "opening", "garage_door" -> Ic.Window
+        "lock" -> if (s == "on") Ic.LockOpen else Ic.Lock
+        else -> if (d == "sensor") Ic.Chart else Ic.Button
+    }
     else -> Ic.Power
 }
 
-/** Long-press sheet for lights, fans and covers. */
+/** The detail sheet ([SHEETS]): a header (name, state, on/off switch where there is one) and rows built from a few control kinds. */
 @Composable
 fun Detail(t: Tile) {
     val e = Ha.ents[t.id] ?: return
     val d = domain(t.id)
     val s = Ha.pending[t.id]?.s ?: e.s
-    val f = e.a.optInt("supported_features")
-    Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+    val a = e.a
+    val f = a.optInt("supported_features")
+    fun has(bit: Int) = f and bit != 0
+    fun call(svc: String, data: JSONObject = JSONObject(), flip: String? = null) = Ha.call(d, svc, t.id, data, flip)
+    val text = stateText(d, s, a, t.dp)
+    val onOff = d in setOf("light", "fan", "siren", "humidifier")
+    val power = when (d) {
+        "water_heater" -> if (has(8)) s != "off" else null
+        "media_player" -> if (has(128) || has(256)) s != "off" else null
+        else -> if (onOff) s == "on" else null
+    }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(t.name, style = MaterialTheme.typography.titleLarge)
-                Text(stateText(d, s, e.a), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val extra = when (d) {
+                    "climate" -> listOfNotNull(a.str("hvac_action")?.let(::label))
+                    "media_player" -> listOfNotNull(a.str("media_title")?.takeIf { it != text }, a.str("media_artist"))
+                    else -> emptyList()
+                }
+                for (x in extra) Text(x, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
-            if (d != "cover") Switch(s == "on", { Ha.call(d, if (it) "turn_on" else "turn_off", t.id, flip = if (it) "on" else "off") })
+            power?.let { p -> Switch(p, { call(if (it) "turn_on" else "turn_off", flip = if (onOff) (if (it) "on" else "off") else null) }) }
         }
         when (d) {
             "light" -> {
@@ -272,6 +319,137 @@ fun Detail(t: Tile) {
                     Ha.call("cover", "set_cover_position", t.id, JSONObject().put("position", Math.round(it)))
                 }
             }
+            "valve" -> {
+                Buttons(listOf("Open" to "open_valve", "Stop" to "stop_valve", "Close" to "close_valve").filterIndexed { i, _ -> has(intArrayOf(1, 8, 2)[i]) }) { call(it) }
+                if (has(4)) Ctl("Position", a.num("current_position")?.toFloat() ?: 0f, 0f..100f) { call("set_valve_position", JSONObject().put("position", Math.round(it))) }
+            }
+            "climate" -> {
+                val unit = a.str("temperature_unit")
+                val step = a.num("target_temp_step") ?: if (unit == "°F") 1.0 else 0.5
+                @Composable fun temp(label: String, k: String, send: (Double) -> Unit) = Stepper(label, a.num(k), a.num("min_temp"), a.num("max_temp"), step, unit, send)
+                if (has(1) && s != "heat_cool") temp("Target", "temperature") { call("set_temperature", JSONObject().put("temperature", it)) }
+                if (has(2) && s == "heat_cool") {
+                    // both ends go in every call: remember what each stepper last sent until the server moves
+                    val sent = remember { mutableMapOf<String, Double>() }
+                    val lo = a.num("target_temp_low"); val hi = a.num("target_temp_high")
+                    LaunchedEffect(lo, hi) { sent.clear() }
+                    fun range(k: String, v: Double) {
+                        sent[k] = v
+                        call("set_temperature", JSONObject().put("target_temp_low", sent["target_temp_low"] ?: lo).put("target_temp_high", sent["target_temp_high"] ?: hi))
+                    }
+                    temp("Low", "target_temp_low") { range("target_temp_low", it) }
+                    temp("High", "target_temp_high") { range("target_temp_high", it) }
+                }
+                Picker("Mode", s, a.strings("hvac_modes")) { call("set_hvac_mode", JSONObject().put("hvac_mode", it), flip = it) }
+                if (has(16)) Picker("Preset", a.str("preset_mode"), a.strings("preset_modes")) { call("set_preset_mode", JSONObject().put("preset_mode", it)) }
+                if (has(8)) Picker("Fan", a.str("fan_mode"), a.strings("fan_modes")) { call("set_fan_mode", JSONObject().put("fan_mode", it)) }
+            }
+            "water_heater" -> {
+                val unit = a.str("temperature_unit")
+                if (has(1)) Stepper("Target", a.num("temperature"), a.num("min_temp"), a.num("max_temp"), a.num("target_temp_step") ?: if (unit == "°F") 1.0 else 0.5, unit) {
+                    call("set_temperature", JSONObject().put("temperature", it))
+                }
+                if (has(2)) Picker("Operation", a.str("operation_mode"), a.strings("operation_list")) { call("set_operation_mode", JSONObject().put("operation_mode", it)) }
+                if (has(4)) SwitchRow("Away", a.str("away_mode") == "on") { call("set_away_mode", JSONObject().put("away_mode", it)) }
+            }
+            "humidifier" -> {
+                val lo = a.num("min_humidity") ?: 0.0; val hi = a.num("max_humidity") ?: 100.0
+                Ctl("Target humidity", (a.num("humidity") ?: lo).toFloat(), lo.toFloat()..hi.toFloat()) {
+                    call("set_humidity", JSONObject().put("humidity", snap(it.toDouble(), a.num("target_humidity_step") ?: 1.0, lo)))
+                }
+                if (has(1)) Picker("Mode", a.str("mode"), a.strings("available_modes")) { call("set_mode", JSONObject().put("mode", it)) }
+            }
+            "media_player" -> {
+                Buttons(listOfNotNull(("Previous" to "media_previous_track").takeIf { has(16) },
+                    ((if (s == "playing") "Pause" else "Play") to "media_play_pause").takeIf { has(1) || has(16384) },
+                    ("Next" to "media_next_track").takeIf { has(32) })) { call(it) }
+                if (has(4)) Ctl("Volume", ((a.num("volume_level") ?: 0.0) * 100).toFloat(), 0f..100f) { call("volume_set", JSONObject().put("volume_level", Math.round(it) / 100.0)) }
+                if (has(8)) SwitchRow("Mute", a.optBoolean("is_volume_muted")) { call("volume_mute", JSONObject().put("is_volume_muted", it)) }
+                if (has(2048)) Picker("Source", a.str("source"), a.strings("source_list"), { it }) { call("select_source", JSONObject().put("source", it)) }
+            }
+            "vacuum" -> {
+                Buttons(listOf("Start" to "start", "Pause" to "pause", "Return home" to "return_to_base", "Locate" to "locate").filterIndexed { i, _ -> has(intArrayOf(8192, 4, 16, 512)[i]) }) { call(it) }
+                if (has(32)) Picker("Fan speed", a.str("fan_speed"), a.strings("fan_speed_list")) { call("set_fan_speed", JSONObject().put("fan_speed", it)) }
+            }
+            "lawn_mower" -> Buttons(listOf("Start" to "start_mowing", "Pause" to "pause", "Dock" to "dock").filterIndexed { i, _ -> has(intArrayOf(1, 2, 4)[i]) }) { call(it) }
+            "alarm_control_panel" -> Alarm(t.name, s, a, f, ::call)
+            "number", "input_number" -> {
+                val lo = a.num("min") ?: 0.0; val hi = a.num("max") ?: 100.0
+                Ctl("Value", (s.toDoubleOrNull() ?: lo).toFloat(), lo.toFloat()..hi.toFloat()) { call("set_value", JSONObject().put("value", snap(it.toDouble(), a.num("step") ?: 1.0, lo))) }
+            }
+        }
+    }
+}
+
+/** Code field (never stored) + arm/disarm buttons. Disarm needs the code when there is a code format, else a confirm. */
+@Composable
+fun Alarm(name: String, s: String, a: JSONObject, f: Int, call: (String, JSONObject, String?) -> Unit) {
+    var code by remember { mutableStateOf("") }
+    var ask by remember { mutableStateOf(false) }
+    val format = a.str("code_format")
+    fun data() = JSONObject().apply { if (code.isNotEmpty()) put("code", code) }
+    if (format != null) OutlinedTextField(code, { code = it }, Modifier.fillMaxWidth().padding(top = 16.dp), label = { Text("Code") }, singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = if (format == "number") KeyboardType.NumberPassword else KeyboardType.Password))
+    val armOk = format == null || code.isNotEmpty() || !a.optBoolean("code_arm_required")
+    Buttons(listOf("Arm home" to "alarm_arm_home", "Arm away" to "alarm_arm_away", "Arm night" to "alarm_arm_night", "Arm vacation" to "alarm_arm_vacation")
+        .filterIndexed { i, _ -> f and intArrayOf(1, 2, 4, 32)[i] != 0 }, armOk) { call(it, data(), null) }
+    if (s != "disarmed") Buttons(listOf("Disarm" to "alarm_disarm"), format == null || code.isNotEmpty()) { if (format == null) ask = true else call(it, data(), null) }
+    if (ask) AlertDialog({ ask = false }, title = { Text("Disarm $name?") },
+        confirmButton = { TextButton({ ask = false; call("alarm_disarm", JSONObject(), null) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Disarm") } },
+        dismissButton = { TextButton({ ask = false }) { Text("Cancel") } })
+}
+
+/** A row of tonal buttons: label → service. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun Buttons(items: List<Pair<String, String>>, enabled: Boolean = true, onClick: (String) -> Unit) {
+    if (items.isEmpty()) return
+    FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((label, svc) in items) FilledTonalButton({ onClick(svc) }, enabled = enabled) { Text(label) }
+    }
+}
+
+@Composable
+fun SwitchRow(label: String, on: Boolean, set: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Switch(on, set)
+    }
+}
+
+/** − value +: sends 600 ms after the last press, then follows the server again. */
+@Composable
+fun Stepper(label: String, server: Double?, min: Double?, max: Double?, step: Double, unit: String?, send: (Double) -> Unit) {
+    var v by remember { mutableStateOf<Double?>(null) }
+    var presses by remember { mutableIntStateOf(0) }
+    val latest by rememberUpdatedState(send) // the low/high pair reads the other end at send time
+    LaunchedEffect(server) { v = null }
+    LaunchedEffect(presses) { if (presses > 0) { delay(600); v?.let(latest) } }
+    fun bump(dir: Int) {
+        var n = snap((v ?: server ?: min ?: 0.0) + dir * step, step, min ?: 0.0)
+        min?.let { n = maxOf(n, it) }; max?.let { n = minOf(n, it) }
+        v = n; presses++
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        FilledTonalIconButton({ bump(-1) }) { Text("−", style = MaterialTheme.typography.titleLarge) }
+        Text((v ?: server)?.let { fmt(it) + (unit?.let { u -> " $u" } ?: "") } ?: "—", Modifier.widthIn(min = 84.dp), textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleMedium)
+        FilledTonalIconButton({ bump(1) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    }
+}
+
+/** A menu of strings that shows the current one. */
+@Composable
+fun Picker(label: String, current: String?, options: List<String>, show: (String) -> String = ::label, pick: (String) -> Unit) {
+    if (options.isEmpty()) return
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Box {
+            OutlinedButton({ open = true }) { Text(current?.let(show) ?: "—") }
+            DropdownMenu(open, { open = false }) { for (o in options) DropdownMenuItem({ Text(show(o)) }, { open = false; pick(o) }) }
         }
     }
 }
@@ -362,5 +540,18 @@ object Ic {
     val LockOpen by lazy { vec("lockopen", "M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z") }
     val Button by lazy { vec("button", "M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z") }
     val Scene by lazy { vec("scene", "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z") }
-    val Script by lazy { vec("script", "M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z") }
+    val Thermo by lazy { vec("thermo", "M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4z") }
+    val Drop by lazy { vec("drop", "M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z") }
+    val Music by lazy { vec("music", "M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z") }
+    val Shield by lazy { vec("shield", "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z") }
+    val Bell by lazy { vec("bell", "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z") }
+    val Tune by lazy { vec("tune", "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z") }
+    val List by lazy { vec("list", "M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z") }
+    val Cloud by lazy { vec("cloud", "M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z") }
+    val Chart by lazy { vec("chart", "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z") }
+    // robot vacuum seen from above: a ring with a bumper dot
+    val Vacuum by lazy { vec("vacuum", "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zM10 8a2 2 0 1 0 4 0 2 2 0 1 0-4 0z") }
+    val Grass by lazy { vec("grass", "M2 20h20v-2H2zm2-3l2.5-8L9 17zm6 0l2-11 2 11zm5 0l2.5-8L20 17z") }
+    val Up by lazy { vec("up", "M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z") }
+    val Script by lazy { vec("script","M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z") }
 }

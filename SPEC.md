@@ -168,7 +168,14 @@ were read from Home Assistant 2026.11.
 | `binary_sensor` | by `device_class`: door, window, opening, garage_door → Open / Closed; motion, occupancy, presence → Detected / Clear; moisture → Wet / Dry; smoke, gas, carbon_monoxide, problem, safety, tamper → Detected / OK; lock → Unlocked / Locked; battery → Low / OK; connectivity → Connected / Disconnected; else On / Off | never | none | none |
 | `weather` | condition label ("partlycloudy" → "Partly cloudy", "clear-night" → "Clear night", else capitalized) + ` · ` + `temperature` + `temperature_unit` | never | none | none |
 
-State labels are the state with `_` → space, first letter capitalized, unless given above. Icons: one plain glyph per
+State labels are the state with `_` (and, for weather, `-`) → space, first letter capitalized, unless given above.
+Numbers show without a trailing `.0` ("42", "0.42"); temperatures carry `temperature_unit` after a space when present.
+Mode pickers (hvac, operation) show labels; the other pickers (preset, fan, source, fan speed, select options) show
+the raw strings. A vacuum or mower tap whose action's feature bit is missing opens the sheet. A stepper whose target
+or bounds are missing is left out. With a `code_format`, Disarm (and arming when `code_arm_required`) stays disabled
+until a code is typed; the typed code is cleared after each send; a wrong code shows the server's error over the sheet.
+Picking a select option or a mode updates the tile at once (optimistic). If one area holds several hidden `onvif`
+cameras, the lowest entity id moves. Icons: one plain glyph per
 domain (binary sensors and sensors may pick by `device_class` where a glyph exists; no icon library).
 
 - Optimistic update: flip `s` locally at once; if the server's state hasn't confirmed within 5 s (or the call fails),

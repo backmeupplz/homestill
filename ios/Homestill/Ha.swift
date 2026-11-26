@@ -8,36 +8,99 @@ let clientId = "https://git.borodutch.com/backmeupplz/homestill"
 let logger = Logger(subsystem: "com.borodutch.homestill", category: "ha")
 @MainActor let ha = Ha()
 
-/// One entity as `subscribe_entities` describes it: state + raw attributes.
-struct Entity { var s: String; var a: [String: Any] }
+/// A JSON value: entity attributes, kept whole (in memory and in the snapshot cache).
+enum JSON: Codable, Equatable {
+    case null, bool(Bool), num(Double), str(String), arr([JSON]), obj([String: JSON])
 
-/// What a tile (or camera card) shows: the entity reduced to the attributes we use. Codable for the snapshot cache.
+    /// From `JSONSerialization` output (NSNumber booleans stay booleans).
+    init(_ v: Any?) {
+        switch v {
+        case let s as String: self = .str(s)
+        case let n as NSNumber: self = CFGetTypeID(n) == CFBooleanGetTypeID() ? .bool(n.boolValue) : .num(n.doubleValue)
+        case let a as [Any]: self = .arr(a.map(JSON.init))
+        case let o as [String: Any]: self = .obj(o.mapValues(JSON.init))
+        default: self = .null
+        }
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let b = try? c.decode(Bool.self) { self = .bool(b) }
+        else if let n = try? c.decode(Double.self) { self = .num(n) }
+        else if let s = try? c.decode(String.self) { self = .str(s) }
+        else if let a = try? c.decode([JSON].self) { self = .arr(a) }
+        else { self = .obj(try c.decode([String: JSON].self)) }
+    }
+
+    func encode(to e: Encoder) throws {
+        var c = e.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let b): try c.encode(b)
+        case .num(let n): try c.encode(n)
+        case .str(let s): try c.encode(s)
+        case .arr(let a): try c.encode(a)
+        case .obj(let o): try c.encode(o)
+        }
+    }
+
+    var num: Double? { if case .num(let n) = self { n } else { nil } }
+    var str: String? { if case .str(let s) = self { s } else { nil } }
+    var bool: Bool? { if case .bool(let b) = self { b } else { nil } }
+    var arr: [JSON]? { if case .arr(let a) = self { a } else { nil } }
+}
+
+/// One entity as `subscribe_entities` describes it: state + attributes.
+struct Entity { var s: String; var a: [String: JSON] }
+
+/// What a tile (or camera card) shows: state + every attribute. Codable for the snapshot cache.
 struct Tile: Codable, Identifiable, Equatable {
     var id: String
     var name: String
     var s: String
-    var brightness: Int?
-    var rgb: [Int]?
-    var modes: [String]?
-    var features = 0
-    var position: Int?
-    var percentage: Int?
-    var minK: Int?
-    var maxK: Int?
-    var kelvin: Int?
-    var hs: [Double]?
-    var picture: String?
+    var a: [String: JSON] = [:]
+    /// Sensor display precision (registry `dp`).
+    var dp: Int?
+    /// Cameras: the `onvif` entity that pans/tilts this camera.
+    var ptz: String?
 
     var domain: String { String(id.prefix { $0 != "." }) }
     /// Buttons, scenes and scripts carry a timestamp or `unknown` as state by design.
     var stateless: Bool { ["button", "input_button", "scene", "script"].contains(domain) }
     var unavailable: Bool { !stateless && (s == "unavailable" || s == "unknown") }
+    var reading: Bool { Ha.readingDomains.contains(domain) }
+
+    func num(_ k: String) -> Double? { a[k]?.num }
+    func int(_ k: String) -> Int? { num(k).map { Int($0.rounded()) } }
+    func str(_ k: String) -> String? { a[k]?.str }
+    func strs(_ k: String) -> [String] { a[k]?.arr?.compactMap(\.str) ?? [] }
+    func has(_ bit: Int) -> Bool { features & bit != 0 }
+    var features: Int { int("supported_features") ?? 0 }
+    var brightness: Int? { int("brightness") }
+    var rgb: [Int]? { a["rgb_color"]?.arr?.compactMap { $0.num.map { Int($0) } } }
+    var modes: [String]? { a["supported_color_modes"]?.arr?.compactMap(\.str) }
+    var position: Int? { int("current_position") }
+    var percentage: Int? { int("percentage") }
+    var minK: Int? { int("min_color_temp_kelvin") }
+    var maxK: Int? { int("max_color_temp_kelvin") }
+    var kelvin: Int? { int("color_temp_kelvin") }
+    var hs: [Double]? { a["hs_color"]?.arr?.compactMap(\.num) }
+    var picture: String? { str("entity_picture") }
 }
 
 struct Section: Codable, Identifiable, Equatable { var id: String; var name: String; var tiles: [Tile] }
 
 /// The registry facts we use about an entity.
-struct Reg: Equatable { var device: String?; var area: String?; var skip = false }
+struct Reg: Equatable {
+    var device: String?
+    var area: String?
+    var hidden = false
+    var category = false
+    var pl: String?
+    var dp: Int?
+    var skip: Bool { hidden || category }
+}
 
 enum HaError: LocalizedError {
     case signedOut, authInvalid, offline, server(String)
@@ -52,15 +115,20 @@ enum HaError: LocalizedError {
 }
 
 enum Conn { case connecting, connected, failed }
-enum LockTap: Equatable { case confirmUnlock, lock, none }
+/// What a tile tap does (SPEC "Tap behavior" and "More devices").
+enum TapAction: Equatable { case call(String, optimistic: String? = nil), confirmUnlock, sheet, menu, none }
 
 // MARK: - Pure logic (unit-tested)
 
 extension Ha {
-    static let homeDomains: Set = ["light", "switch", "input_boolean", "fan", "cover", "lock", "button", "input_button", "scene", "script"]
+    static let controlDomains: Set = ["light", "switch", "input_boolean", "fan", "cover", "lock", "button", "input_button", "scene",
+                                      "script", "siren", "remote", "valve", "climate", "water_heater", "humidifier", "media_player",
+                                      "vacuum", "lawn_mower", "alarm_control_panel"]
+    /// Settings and readings: shown only with an area and a known state.
+    nonisolated static let readingDomains: Set = ["number", "input_number", "select", "input_select", "sensor", "binary_sensor", "weather"]
     static func shown(_ id: String) -> Bool {
         let d = String(id.prefix { $0 != "." })
-        return d == "camera" || homeDomains.contains(d)
+        return d == "camera" || controlDomains.contains(d) || readingDomains.contains(d)
     }
 
     /// Applies one `subscribe_entities` event (`a` added/full, `c` diffs, `r` removed). Returns the ids whose state `s` the
@@ -70,7 +138,7 @@ extension Ha {
         var settled = Set<String>()
         if let add = ev["a"] as? [String: [String: Any]] {
             for (id, e) in add where shown(id) {
-                st[id] = Entity(s: e["s"] as? String ?? "unknown", a: e["a"] as? [String: Any] ?? [:])
+                st[id] = Entity(s: e["s"] as? String ?? "unknown", a: (e["a"] as? [String: Any] ?? [:]).mapValues(JSON.init))
                 settled.insert(id)
             }
         }
@@ -79,7 +147,7 @@ extension Ha {
                 guard var e = st[id] else { continue }
                 if let p = d["+"] as? [String: Any] {
                     if let s = p["s"] as? String { e.s = s; settled.insert(id) }
-                    if let a = p["a"] as? [String: Any] { e.a.merge(a) { $1 } }
+                    if let a = p["a"] as? [String: Any] { e.a.merge(a.mapValues(JSON.init)) { $1 } }
                 }
                 if let m = d["-"] as? [String: Any], let keys = m["a"] as? [String] { for k in keys { e.a[k] = nil } }
                 st[id] = e
@@ -97,39 +165,54 @@ extension Ha {
     }
 
     static func tile(_ id: String, _ e: Entity, area: String?) -> Tile {
-        let a = e.a
-        func int(_ k: String) -> Int? { (a[k] as? NSNumber).map { Int($0.doubleValue.rounded()) } }
-        return Tile(id: id, name: displayName(a["friendly_name"] as? String ?? id, area: area), s: e.s,
-                    brightness: int("brightness"), rgb: (a["rgb_color"] as? [NSNumber])?.map(\.intValue),
-                    modes: a["supported_color_modes"] as? [String], features: int("supported_features") ?? 0,
-                    position: int("current_position"), percentage: int("percentage"),
-                    minK: int("min_color_temp_kelvin"), maxK: int("max_color_temp_kelvin"), kelvin: int("color_temp_kelvin"),
-                    hs: (a["hs_color"] as? [NSNumber])?.map(\.doubleValue), picture: a["entity_picture"] as? String)
+        Tile(id: id, name: displayName(e.a["friendly_name"]?.str ?? id, area: area), s: e.s, a: e.a)
     }
 
     /// Home sections (Scenes, areas in registry order, Other) and the camera list.
     static func build(states: [String: Entity], reg: [String: Reg], deviceArea: [String: String],
                       areas: [(id: String, name: String)]) -> (home: [Section], cameras: [Tile]) {
         let areaName = Dictionary(areas.map { ($0.id, $0.name) }) { a, _ in a }
-        var inArea: [String: [Tile]] = [:], scenes: [Tile] = [], other: [Tile] = [], cameras: [Tile] = []
+        var inArea: [String: [Tile]] = [:], scenes: [Tile] = [], other: [Tile] = []
+        var cameras: [(t: Tile, area: String?)] = [], hiddenOnvif: [String: String] = [:]
         for (id, e) in states where shown(id) {
             let r = reg[id]
-            if r?.skip == true { continue }
             let area = (r?.area ?? r?.device.flatMap { deviceArea[$0] }).flatMap { areaName[$0] != nil ? $0 : nil }
-            let t = tile(id, e, area: area.flatMap { areaName[$0] })
-            switch t.domain {
-            case "camera": cameras.append(Self.tile(id, e, area: nil))
+            let domain = String(id.prefix { $0 != "." })
+            if domain == "camera", r?.hidden == true, r?.pl == "onvif", let area {
+                hiddenOnvif[area] = min(hiddenOnvif[area] ?? id, id) // several in one area: the first by id
+            }
+            if r?.skip == true { continue }
+            var t = tile(id, e, area: area.flatMap { areaName[$0] })
+            t.dp = r?.dp
+            if domain == "camera" {
+                var c = tile(id, e, area: nil)
+                c.ptz = r?.pl == "onvif" ? id : nil
+                cameras.append((c, area)); continue
+            }
+            if t.reading, area == nil || ["unavailable", "unknown"].contains(e.s) || (domain == "sensor" && t.str("device_class") == "timestamp") {
+                continue
+            }
+            switch domain {
             case _ where area != nil: inArea[area!, default: []].append(t)
             case "scene", "script": scenes.append(t)
             default: other.append(t)
             }
         }
-        func sorted(_ t: [Tile]) -> [Tile] { t.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
+        // the only shown camera in an area that holds a hidden onvif camera is moved by that one
+        let perArea = Dictionary(grouping: cameras.compactMap(\.area)) { $0 }
+        let cams = cameras.map { c in
+            var t = c.t
+            if t.ptz == nil, let a = c.area, perArea[a]?.count == 1 { t.ptz = hiddenOnvif[a] }
+            return t
+        }
+        func sorted(_ t: [Tile]) -> [Tile] {
+            t.sorted { $0.reading != $1.reading ? !$0.reading : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
         var home: [Section] = []
         if !scenes.isEmpty { home.append(Section(id: "~scenes", name: "Scenes", tiles: sorted(scenes))) }
         for a in areas { if let t = inArea[a.id] { home.append(Section(id: a.id, name: a.name, tiles: sorted(t))) } }
         if !other.isEmpty { home.append(Section(id: "~other", name: "Other", tiles: sorted(other))) }
-        return (home, sorted(cameras))
+        return (home, sorted(cams))
     }
 
     static func parseEntityReg(_ r: Any?) -> [String: Reg] {
@@ -137,17 +220,55 @@ extension Ha {
         var out: [String: Reg] = [:]
         for e in list {
             guard let id = e["ei"] as? String, shown(id) else { continue }
-            out[id] = Reg(device: e["di"] as? String, area: e["ai"] as? String,
-                          skip: (e["hb"] as? Bool) == true || (e["ec"] != nil && !(e["ec"] is NSNull)))
+            out[id] = Reg(device: e["di"] as? String, area: e["ai"] as? String, hidden: (e["hb"] as? Bool) == true,
+                          category: e["ec"] != nil && !(e["ec"] is NSNull), pl: e["pl"] as? String, dp: (e["dp"] as? NSNumber)?.intValue)
         }
         return out
     }
 
-    static func lockTap(_ s: String) -> LockTap {
-        switch s {
-        case "locked": .confirmUnlock
-        case "unlocked", "open", "jammed": .lock
-        default: .none
+    static func tapAction(_ t: Tile) -> TapAction {
+        if t.unavailable { return .none }
+        let s = t.s
+        switch t.domain {
+        case "light", "switch", "input_boolean", "fan", "remote", "humidifier": return .call("toggle", optimistic: s == "on" ? "off" : "on")
+        case "cover": return .call("toggle", optimistic: ["open", "opening"].contains(s) ? "closing" : "opening")
+        case "valve": return .call("toggle", optimistic: ["open", "opening"].contains(s) ? "closed" : "open")
+        case "lock":
+            switch s {
+            case "locked": return .confirmUnlock
+            case "unlocked", "open", "jammed": return .call("lock", optimistic: "locking")
+            default: return .none
+            }
+        case "button", "input_button": return .call("press")
+        case "scene", "script": return .call("turn_on")
+        case "media_player":
+            if s == "playing" || s == "paused" { return .call("media_play_pause") }
+            return s == "off" && t.has(128) ? .call("turn_on") : .sheet
+        case "vacuum":
+            if s == "cleaning" { return .call(t.has(4) ? "pause" : "return_to_base") }
+            return t.has(8192) ? .call("start") : .sheet
+        case "lawn_mower":
+            if s == "mowing" { return t.has(2) ? .call("pause") : .sheet }
+            return t.has(1) ? .call("start_mowing") : .sheet
+        case "select", "input_select": return .menu
+        case "siren", "climate", "water_heater", "alarm_control_panel", "number", "input_number": return .sheet
+        default: return .none
+        }
+    }
+
+    /// "On"-like tiles (column "Active"); readings never.
+    static func active(_ t: Tile) -> Bool {
+        if t.unavailable { return false }
+        switch t.domain {
+        case "light", "switch", "input_boolean", "fan", "siren", "remote", "humidifier": return t.s == "on"
+        case "cover", "valve": return ["open", "opening"].contains(t.s)
+        case "lock": return ["unlocked", "open", "jammed"].contains(t.s)
+        case "climate", "water_heater": return t.s != "off"
+        case "media_player": return t.s == "playing"
+        case "vacuum": return t.s == "cleaning"
+        case "lawn_mower": return t.s == "mowing"
+        case "alarm_control_panel": return t.s.hasPrefix("armed") || t.s == "triggered"
+        default: return false
         }
     }
 
@@ -163,16 +284,58 @@ extension Ha {
         return s.contains("://") ? [s] : ["https://" + s, "http://" + s]
     }
 
+    /// A state as a label: `_` → space, first letter capitalized ("armed_home" → "Armed home").
+    static func label(_ s: String) -> String {
+        let x = s.replacingOccurrences(of: "_", with: " ")
+        return x.prefix(1).uppercased() + x.dropFirst()
+    }
+
+    /// 21.0 → "21", 21.5 → "21.5", 21.1 + 0.1 → "21.2"; with `dp`, exactly that many decimals.
+    static func fmt(_ d: Double, dp: Int? = nil) -> String {
+        if let dp { return String(format: "%.\(max(dp, 0))f", d) }
+        let r = abs(d) < 1e9 ? (d * 1e6).rounded() / 1e6 : d // drop float noise from adding steps
+        return r == r.rounded() && abs(r) < 1e15 ? String(Int(r)) : String(r)
+    }
+
+    static let binaryWords: [String: (on: String, off: String)] = {
+        var w: [String: (String, String)] = [:]
+        for k in ["door", "window", "opening", "garage_door"] { w[k] = ("Open", "Closed") }
+        for k in ["motion", "occupancy", "presence"] { w[k] = ("Detected", "Clear") }
+        for k in ["smoke", "gas", "carbon_monoxide", "problem", "safety", "tamper"] { w[k] = ("Detected", "OK") }
+        w["moisture"] = ("Wet", "Dry"); w["lock"] = ("Unlocked", "Locked"); w["battery"] = ("Low", "OK")
+        w["connectivity"] = ("Connected", "Disconnected")
+        return w
+    }()
+
     static func stateText(_ t: Tile) -> String {
         if t.unavailable { return "Unavailable" }
-        let s = t.s.replacingOccurrences(of: "_", with: " ").capitalized
+        let s = label(t.s)
+        let unit = t.str("unit_of_measurement").map { " " + $0 } ?? ""
+        /// " · 21.5 °C" from a temperature attribute (nothing when it's missing).
+        func temp(_ k: String) -> String {
+            t.num(k).map { " · " + fmt($0) + (t.str("temperature_unit").map { " " + $0 } ?? "") } ?? ""
+        }
         switch t.domain {
         case "light": return t.s == "on" ? (t.brightness.map { "On · \(Int((Double($0) / 255 * 100).rounded()))%" } ?? "On") : s
         case "fan": return t.s == "on" ? (t.percentage.map { "On · \($0)%" } ?? "On") : s
-        case "cover": return t.position.map { "\(s) · \($0)%" } ?? s
+        case "cover", "valve": return t.position.map { "\(s) · \($0)%" } ?? s
         case "button", "input_button": return "Press"
         case "scene": return "Activate"
         case "script": return t.s == "on" ? "Running" : "Run"
+        case "climate": return s + temp("current_temperature")
+        case "water_heater": return label(t.str("operation_mode") ?? t.s) + temp("temperature")
+        case "humidifier": return t.s == "on" ? (t.int("humidity").map { "On · \($0)%" } ?? "On") : s
+        case "media_player": return t.s == "playing" || t.s == "paused" ? (t.str("media_title") ?? s) : s
+        case "number", "input_number": return (Double(t.s).map { fmt($0) } ?? t.s) + unit
+        case "select", "input_select": return t.s
+        case "sensor":
+            guard let d = Double(t.s) else { return t.s }
+            return (t.dp.map { fmt(d, dp: $0) } ?? t.s) + unit
+        case "binary_sensor":
+            let w = binaryWords[t.str("device_class") ?? ""] ?? ("On", "Off")
+            return t.s == "on" ? w.on : w.off
+        case "weather":
+            return (t.s == "partlycloudy" ? "Partly cloudy" : label(t.s.replacingOccurrences(of: "-", with: " "))) + temp("temperature")
         default: return s
         }
     }
@@ -394,19 +557,15 @@ extension Ha {
     }
 
     /// The tile tap (SPEC "Tap behavior").
+    /// Sheets and menus are opened by the tile itself.
     func tap(_ t: Tile) {
-        guard connected, !t.unavailable else { return }
-        switch t.domain {
-        case "lock":
-            switch Self.lockTap(t.s) {
-            case .confirmUnlock: unlockAsk = t
-            case .lock: service(t.id, "lock", "lock", optimistic: "locking")
-            case .none: break
-            }
-        case "button", "input_button": flash(t.id); service(t.id, t.domain, "press")
-        case "scene", "script": flash(t.id); service(t.id, t.domain, "turn_on")
-        case "cover": service(t.id, "cover", "toggle", optimistic: ["open", "opening"].contains(t.s) ? "closing" : "opening")
-        default: service(t.id, t.domain, "toggle", optimistic: t.s == "on" ? "off" : "on")
+        guard connected else { return }
+        switch Self.tapAction(t) {
+        case .confirmUnlock: unlockAsk = t
+        case .call(let s, let o):
+            if t.stateless { flash(t.id) }
+            service(t.id, t.domain, s, optimistic: o)
+        case .sheet, .menu, .none: break
         }
     }
 

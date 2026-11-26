@@ -59,7 +59,37 @@ struct FullCamera: View {
             Button("Close", systemImage: "xmark") { dismiss() }
                 .labelStyle(.iconOnly).font(.title3).buttonStyle(.glass).padding()
         }
+        .overlay(alignment: .bottomTrailing) { if let to = ha.tile(id)?.ptz { PanTilt(onvif: to).padding(24) } }
+        .toast()
         .statusBarHidden()
+    }
+}
+
+/// Four arrows; each tap nudges the onvif camera for one second (tap only: the picture lags, holding overshoots).
+struct PanTilt: View {
+    let onvif: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            arrow("Tilt up", "chevron.up", ["tilt": "UP"])
+            HStack(spacing: 44) {
+                arrow("Pan left", "chevron.left", ["pan": "LEFT"])
+                arrow("Pan right", "chevron.right", ["pan": "RIGHT"])
+            }
+            arrow("Tilt down", "chevron.down", ["tilt": "DOWN"])
+        }
+        .padding(4)
+        .background(.ultraThinMaterial, in: .circle)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func arrow(_ label: String, _ icon: String, _ move: [String: Any]) -> some View {
+        Button {
+            ha.service(onvif, "onvif", "ptz", move.merging(["move_mode": "ContinuousMove", "speed": 0.5, "continuous_duration": 1]) { a, _ in a })
+        } label: {
+            Image(systemName: icon).font(.title3.weight(.semibold)).foregroundStyle(.white).frame(width: 44, height: 44).contentShape(.rect)
+        }
+        .accessibilityLabel(label)
     }
 }
 
