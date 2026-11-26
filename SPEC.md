@@ -30,8 +30,7 @@ tiles between rooms, hiding) is customizable on the phone ("Customizing Home"); 
   iPhone build to App Review (`ios/release.sh`), signed APK as `homestill-X.Y.Z.apk` + `homestill.apk` on the Forgejo
   and GitHub releases. Version = `versionName`/`versionCode` in `app/build.gradle.kts` (iOS build number = versionCode);
   notes in `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`, store texts in `appstore/` and `fastlane/`.
-  GitHub only (no stores yet): a DRAFT Forgejo release on the pushed tag plus a manual `apk-only` run. To send it to
-  the stores later, publish the draft and run `full` on the tag by hand (publishing a draft doesn't start the workflow).
+  Every release goes to both stores: no GitHub-only or draft releases (publishing a draft doesn't start the workflow).
 
 ## Speed is the feature
 
