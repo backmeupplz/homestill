@@ -1,1 +1,1 @@
-A fast Home Assistant app for device controls and live camera feeds.
+Control your Home Assistant rooms and watch live cameras in a fast native app.

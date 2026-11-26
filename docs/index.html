@@ -71,17 +71,17 @@ footer{padding:32px 0 56px;border-top:1px solid var(--line);color:var(--dim);fon
 
 <section id="controls" aria-labelledby="controls-h">
   <h2 id="controls-h">Device controls by room</h2>
-  <p>Homestill pulls your rooms straight from your Home Assistant areas, so you don't have to maintain a separate dashboard. Tap a tile to toggle lights, switches, fans and covers, or to run buttons, scenes and scripts. A long press opens brightness, warmth and color for lights, speed for fans, and position for covers, and unlocking a lock asks you to confirm first.</p>
+  <p>Homestill pulls your rooms straight from your Home Assistant areas, so you don't have to maintain a separate dashboard. Tap a tile to toggle lights, switches, fans and covers, or to run buttons, scenes and scripts; unlocking a lock asks you to confirm first. A long press opens brightness, a color wheel for hue and saturation, and a warmth bar for lights, speed for fans, and position for covers. Homestill also controls thermostats (target temperature, mode, preset and fan), water heaters, humidifiers, media players (play/pause, next/previous, volume, mute and source), robot vacuums and lawn mowers (start, pause and send home), valves, sirens, remotes, alarm panels (arm and disarm with the panel's code, which is never stored), and number and select settings. Sensor, door/motion and weather readings appear as one-line tiles inside their rooms, with no graphs or history.</p>
 </section>
 
 <section id="cameras" aria-labelledby="cameras-h">
   <h2 id="cameras-h">Live camera feeds</h2>
-  <p>Cameras play live over Home Assistant's low-latency HLS stream, with the first frame measured at 0.2 to 0.65 seconds in tests. If a camera can't stream, Homestill falls back to a still image refreshed every second so the view keeps updating.</p>
+  <p>Cameras play live over Home Assistant's low-latency HLS stream, with the first frame measured at 0.2 to 0.65 seconds in tests. If a camera can't stream, Homestill falls back to a still image refreshed every second so the view keeps updating. Cameras that support pan and tilt through Home Assistant's ONVIF integration get arrow buttons in the full-screen view, and each tap nudges the camera.</p>
 </section>
 
 <section id="speed-and-privacy" aria-labelledby="speed-h">
   <h2 id="speed-h">Built native for speed and privacy</h2>
-  <p>Homestill is written natively in Kotlin with Jetpack Compose on Android (a 4.1 MB download) and SwiftUI on iPhone with no third-party libraries. When you open the app, it draws the last known state of your home at once, runs everything over a single WebSocket to your server, and updates each tile the moment you tap instead of waiting for a round trip. You sign in with your Home Assistant address, username and password right inside the app, with two-factor codes supported and no browser needed, and the phone stores only a refresh token. There is no account to create, no analytics and no tracking, because Homestill talks only to your own Home Assistant server.</p>
+  <p>Homestill is written natively in Kotlin with Jetpack Compose on Android (a 4.2 MB download) and SwiftUI on iPhone with no third-party libraries. When you open the app, it draws the last known state of your home at once, runs everything over a single WebSocket to your server, and updates each tile the moment you tap instead of waiting for a round trip. You sign in with your Home Assistant address, username and password right inside the app, with two-factor codes supported and no browser needed, and the phone stores only a refresh token. There is no account to create, no analytics and no tracking, because Homestill talks only to your own Home Assistant server.</p>
 </section>
 
 <div class="shots">

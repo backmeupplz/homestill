@@ -4,44 +4,45 @@
 Homestill for Home Assistant
 
 ## Subtitle (max 30)
-Smart home controls & cameras
+Fast controls and live cameras
 
 ## Promotional text (max 170)
-Your Home Assistant lights, locks, thermostats and cameras in one small, fast app. Your rooms are on screen the moment it opens, and every tile answers your tap at once.
+Control your Home Assistant rooms and watch live cameras from a native iPhone app built for speed. One WebSocket, instant cached state, and no ads or tracking.
 
 ## Description (max 4000)
-Homestill is a Home Assistant app for iPhone that does two things and does them fast: it controls your devices and it plays your cameras live. Sign in with your Home Assistant address, username and password, and your home is there, laid out by the areas you already set up in Home Assistant, with no dashboard to build.
+Homestill is a native Home Assistant app for iPhone that does two things well: controlling your devices by room and watching your cameras live. It is built in SwiftUI with no third-party libraries, and it deliberately leaves out dashboards, history, graphs, automations, and settings editing so the app stays small and opens fast.
 
-CONTROLS
-• Every room of your home with its lights, switches, fans, covers, locks, scenes and scripts as tiles
-• A tap switches the device at once, and the live state from your server confirms it
-• Hold a light for brightness, warmth and a color wheel, a fan for its speed and a cover for its position
-• Thermostats, water heaters, humidifiers, media players, vacuums, lawn mowers, valves, sirens and alarm panels, each with its own controls
-• Temperatures, doors, windows, motion and other sensors as one-line readings inside their room
-• Unlocking a door asks you first, and an alarm panel never arms or disarms from a single tap
+DEVICE CONTROLS BY ROOM
+Homestill pulls your rooms straight from your Home Assistant areas, so you do not have to build or maintain another dashboard. Tap a tile to flip a switch or run a scene, and press and hold when you want finer controls:
+• Lights with brightness, a color wheel for hue and saturation, and a warmth bar
+• Switches, fans, covers and blinds, buttons, scenes, and scripts
+• Door locks, with a confirmation prompt before unlocking
+• Thermostats (target temperature, mode, preset, and fan), water heaters, and humidifiers
+• Media players with play/pause, next/previous, volume, mute, and source controls
+• Robot vacuums and lawn mowers with start, pause, and send-home controls
+• Valves, sirens, remotes, and number and select settings
+• Alarm panels that arm and disarm using your panel's code, which is never stored
+• Sensor, door, motion, and weather readings shown as clean one-line tiles inside each room
 
-CAMERAS
-• All your cameras play live in one list, straight from Home Assistant's low-latency stream
-• A camera that can't stream shows a still image that refreshes every second
-• Tap a camera for full screen, then pinch to zoom or turn your phone sideways
-• Pan and tilt ONVIF cameras with arrow buttons
+LIVE CAMERAS
+• Live video over Home Assistant's low-latency HLS stream, with the first frame measured at 0.2 to 0.65 seconds in tests
+• Automatic fallback to a still image refreshed every second when a camera cannot stream
+• Full-screen camera view with pinch to zoom
+• On-screen pan and tilt arrow buttons for cameras that support pan and tilt through Home Assistant's ONVIF integration
 
-FAST BY DESIGN
-• Opens on the last known state of your home at once, then goes live
-• One connection to your server carries every device update, with no polling
-• Nothing runs in the background: the connection closes when you leave the app and comes back when you return
-• Follows your phone's light or dark appearance
+BUILT FOR SPEED AND PRIVACY
+• Draws the last known state of your home immediately on launch
+• Runs everything over a single WebSocket to your server and updates tiles the moment you tap, before the server replies
+• Sign in with your Home Assistant server address, username, and password right inside the app, with two-factor authentication codes supported and no browser redirect
+• Stores only your server address and a refresh token in the iPhone Keychain, and revokes the token when you sign out
+• No account, no analytics, no tracking, and no ads: Homestill talks only to the Home Assistant server you enter
 
-PRIVATE BY DESIGN
-Homestill talks only to your Home Assistant server. Sign-in happens right in the app, two-factor codes included, and your password is never stored, only a sign-in token, kept in the Keychain. No accounts with us, no analytics, no ads, no tracking. The app is open source.
+Homestill requires your own Home Assistant server. It is free and open source under the MIT license (https://github.com/backmeupplz/homestill).
 
-WHAT IT LEAVES OUT
-Homestill has no dashboards, history, graphs, automations, notifications or widgets, and it doesn't edit your Home Assistant configuration. It is made for the everyday things, like switching on a light or checking who is at the gate, and it gets them done quickly.
-
-Homestill needs a Home Assistant server that you or someone you know runs, reachable from your phone on your network or over the internet. Homestill is an independent app, not affiliated with or endorsed by the Home Assistant project.
+Homestill is an independent app and is not affiliated with or endorsed by Home Assistant or Nabu Casa.
 
 ## Keywords (max 100)
-hass,homeassistant,lights,thermostat,lock,switch,cctv,ptz,onvif,hvac,blinds,garage,vacuum,iot,remote
+smart,client,hass,device,remote,light,switch,thermostat,lock,blinds,sensor,scene,onvif,ptz,local
 
 ## Screenshot captions
 1. Every room of your home on one screen
