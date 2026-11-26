@@ -23,7 +23,8 @@ only as one-line readings inside rooms.
   and `NSLocalNetworkUsageDescription` ("Homestill connects to Home Assistant on your network."). No
   `NSAllowsLocalNetworking`: when present, iOS ignores `NSAllowsArbitraryLoads` and blocks plain http to dotted hostnames
   (checked: `http://<mac>.<tailnet>.ts.net:8124` failed with error -1022 until the key was removed).
-- English only for now. Follows the system light/dark theme (Android: Material You dynamic color on 12+).
+- English only for now. Follows the system light/dark theme (Android: Material You dynamic color on 12+). Every screen,
+  sign-in included, takes its text color from the theme, never a fixed black or white (camera views excepted: white on black).
 - Releases (as Spinwell): a published Forgejo release `vX.Y.Z` runs `.forgejo/workflows/release.yml`: AAB to Google Play,
   iPhone build to App Review (`ios/release.sh`), signed APK as `homestill-X.Y.Z.apk` + `homestill.apk` on the Forgejo
   and GitHub releases. Version = `versionName`/`versionCode` in `app/build.gradle.kts` (iOS build number = versionCode);
@@ -127,7 +128,9 @@ only as one-line readings inside rooms.
 - Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). Within a section,
   controls first, then settings and readings, each sorted by name. "On"-like tiles are tinted: lights by their
   `rgb_color` when on (fallback amber, also for near-white colors, which would vanish on a light background), other
-  controls by the accent color when active (column "Active" below). Readings are never tinted and not tappable.
+  controls by the accent color when active (column "Active" below). The tile's background takes the tint at 22%; its
+  icon takes the tint blended toward the text color just enough to stand out 3:1 from that background (a blue bulb in
+  dark mode, a yellow one in light mode). Readings are never tinted and not tappable.
 - `unavailable`/`unknown` state (except buttons/scenes/scripts, whose state is a timestamp or `unknown` by design): dimmed,
   state text "Unavailable", not tappable.
 - Tap behavior:

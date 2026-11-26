@@ -45,6 +45,8 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
@@ -69,7 +71,8 @@ fun HomestillTheme(content: @Composable () -> Unit) {
         dark -> darkColorScheme()
         else -> lightColorScheme()
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    // The Surface sets the text color for screens without a Scaffold (sign-in); bare Text would be black in dark mode
+    MaterialTheme(colorScheme = scheme) { Surface(color = scheme.background, content = content) }
 }
 
 @Composable
@@ -182,6 +185,13 @@ private val Amber = Color(0xFFFFB300)
 fun lightColor(a: JSONObject): Color = a.optJSONArray("rgb_color")?.takeIf { it.length() == 3 && (0..2).any { i -> it.optInt(i) < 200 } }
     ?.let { Color(it.optInt(0), it.optInt(1), it.optInt(2)) } ?: Amber
 
+/** [c] blended toward [ink] (the text color) just enough to stand out 3:1 from [bg], the WCAG minimum for icons. */
+fun legible(c: Color, bg: Color, ink: Color): Color {
+    val b = bg.luminance()
+    fun ok(x: Color) = x.luminance().let { (maxOf(it, b) + 0.05f) / (minOf(it, b) + 0.05f) } >= 3f
+    return (0..10).map { lerp(c, ink, it / 10f) }.firstOrNull(::ok) ?: ink
+}
+
 @Composable
 fun EntityTile(t: Tile, live: Boolean, onSheet: () -> Unit, onConfirm: () -> Unit) {
     val e = Ha.ents[t.id] ?: return
@@ -199,10 +209,11 @@ fun EntityTile(t: Tile, live: Boolean, onSheet: () -> Unit, onConfirm: () -> Uni
     val flash = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val base = MaterialTheme.colorScheme.surfaceContainerHigh
+    val bg = if (on) accent.copy(alpha = 0.22f).compositeOver(base) else base
     Box {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                .background(if (on) accent.copy(alpha = 0.22f).compositeOver(base) else base)
+                .background(bg)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f * flash.value))
                 .alpha(if (off) 0.45f else 1f)
                 .combinedClickable(enabled = live && !off && (d == "lock" || tap != null || d in SHEETS), onLongClick = if (d in SHEETS) onSheet else null) {
@@ -216,7 +227,7 @@ fun EntityTile(t: Tile, live: Boolean, onSheet: () -> Unit, onConfirm: () -> Uni
                 }
                 .padding(14.dp),
         ) {
-            Icon(icon(d, s, e.a), null, tint = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(icon(d, s, e.a), null, tint = if (on) legible(accent, bg, MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(10.dp))
             Text(t.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(stateText(d, s, e.a, t.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,

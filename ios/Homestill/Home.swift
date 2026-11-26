@@ -62,6 +62,7 @@ struct Banner: View {
 struct TileView: View {
     let t: Tile
     let details: () -> Void
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let action = Ha.tapAction(t)
@@ -89,7 +90,7 @@ struct TileView: View {
         let on = Ha.active(t)
         let tint = Self.tint(t)
         return VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: Self.icon(t)).font(.title2).foregroundStyle(on ? tint : .secondary).frame(height: 28)
+            Image(systemName: Self.icon(t)).font(.title2).foregroundStyle(on ? Self.legible(tint, dark: scheme == .dark) : .secondary).frame(height: 28)
             Text(t.name).font(.subheadline.weight(.semibold)).lineLimit(1)
             Text(Ha.stateText(t)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
@@ -117,6 +118,24 @@ struct TileView: View {
         case "alarm_control_panel": return t.s == "triggered" ? .red : .accentColor
         default: return .accentColor
         }
+    }
+
+    /// `c` blended toward the text color just enough to stand out 3:1 (the WCAG minimum for icons) from the card: `c` at
+    /// 22% over the page.
+    static func legible(_ c: Color, dark: Bool) -> Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)).getRed(&r, green: &g, blue: &b, alpha: &a)
+        let rgb = [r, g, b].map { min(max($0, 0), 1) }, page: CGFloat = dark ? 0 : 1, ink: CGFloat = dark ? 1 : 0
+        func lum(_ x: [CGFloat]) -> CGFloat {
+            let l = x.map { $0 <= 0.03928 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
+        }
+        let bg = lum(rgb.map { $0 * 0.22 + page * 0.78 })
+        for i in 0...10 {
+            let x = rgb.map { $0 + (ink - $0) * CGFloat(i) / 10 }, l = lum(x)
+            if (max(l, bg) + 0.05) / (min(l, bg) + 0.05) >= 3 { return Color(red: x[0], green: x[1], blue: x[2]) }
+        }
+        return dark ? .white : .black
     }
 
     static func icon(_ t: Tile) -> String {

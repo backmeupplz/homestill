@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Homestill
 
@@ -240,5 +241,23 @@ import XCTest
         XCTAssertEqual(Ha.fmt(21.1 + 0.1), "21.2")
         XCTAssertEqual(Ha.fmt(-3), "-3")
         XCTAssertEqual(Ha.fmt(0.42), "0.42")
+    }
+
+    func testBulbIconsStandOutFromTheirCard() {
+        func lum(_ c: Color) -> CGFloat {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+            let l = [r, g, b].map { $0 <= 0.03928 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
+        }
+        for dark in [false, true] {
+            for c in [Color(red: 0, green: 0, blue: 1), Color(red: 1, green: 1, blue: 0), Color(red: 1, green: 0.9, blue: 0.8), .orange] {
+                let page: CGFloat = dark ? 0 : 1, icon = lum(TileView.legible(c, dark: dark))
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                UIColor(c).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)).getRed(&r, green: &g, blue: &b, alpha: &a)
+                let bg = lum(Color(red: r * 0.22 + page * 0.78, green: g * 0.22 + page * 0.78, blue: b * 0.22 + page * 0.78))
+                XCTAssertGreaterThanOrEqual((max(icon, bg) + 0.05) / (min(icon, bg) + 0.05), 2.99, "\(c) dark=\(dark)")
+            }
+        }
     }
 }
