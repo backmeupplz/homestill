@@ -18,13 +18,17 @@ import asyncio, secrets
 import aiohttp
 ROOMS = {
     "living_room": ["light.living_room_rgbww_lights", "light.ceiling_lights", "fan.living_room_fan", "cover.living_room_window",
-                    "switch.decorative_lights", "climate.hvac", "number.volume", "select.speed", "sensor.outside_humidity"],
+                    "switch.decorative_lights", "climate.hvac", "sensor.outside_humidity"],
     "kitchen": ["light.kitchen_lights", "cover.kitchen_window", "water_heater.demo_water_heater", "binary_sensor.basement_floor_wet"],
     "bedroom": ["light.bed_light", "switch.ac", "fan.ceiling_fan", "climate.heatpump"],
     "garden": ["valve.front_garden", "valve.back_garden", "lawn_mower.my_lawn_mower", "binary_sensor.movement_backyard",
                "sensor.outside_temperature", "weather.demo_weather_south", "camera.gate_camera"],
-    "hall": ["alarm_control_panel.security", "vacuum.demo_vacuum_0_ground_floor"],
+    "hall": ["alarm_control_panel.security", "vacuum.demo_vacuum_0_ground_floor", "number.volume", "select.speed"],
 }
+# Friendlier names than the demo's for what reviewers (and the store screenshots) see first.
+NAMES = {"climate.hvac": "Thermostat", "climate.heatpump": "Heat pump", "light.living_room_rgbww_lights": "Floor lamp",
+         "sensor.outside_humidity": "Humidity", "number.volume": "Volume", "water_heater.demo_water_heater": "Water heater",
+         "vacuum.demo_vacuum_0_ground_floor": "Vacuum", "weather.demo_weather_south": "Weather", "lawn_mower.my_lawn_mower": "Lawn mower"}
 
 
 async def main():
@@ -72,6 +76,9 @@ async def main():
                 for i in ids:
                     res.append(await call(type="config/device_registry/update", device_id=dev[i], area_id=area_id) if dev[i]
                                else await call(type="config/entity_registry/update", entity_id=i, area_id=area_id))
+            for i, name in NAMES.items():
+                res.append(await call(type="config/device_registry/update", device_id=dev[i], name_by_user=name) if dev[i]
+                           else await call(type="config/entity_registry/update", entity_id=i, name=name))
             user = await call(type="config/auth/create", name="Reviewer", group_ids=["system-users"], local_only=False)
             res += [user, await call(type="config/auth_provider/homeassistant/create", user_id=user["result"]["user"]["id"],
                                      username=REVIEWER[0], password=REVIEWER[1])]
