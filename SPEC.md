@@ -222,6 +222,6 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
 - Control testing happens only against the throwaway demo server (`tools/demo-ha.sh`: Docker Home Assistant with the
   `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). Its rooms hold one of
   most domains above, and a stub `onvif` integration adds `camera.gate_camera` (Garden) whose `onvif.ptz` service
-  stores the last call's data in the camera's `last_ptz` attribute. The real home server
-  (`https://home.icefish-betta.ts.net`) holds real door locks and lights people are using: sign in, look, and watch the
+  stores the last call's data in the camera's `last_ptz` attribute. The developer's real home server
+  holds real door locks and lights people are using: sign in, look, and watch the
   cameras, but never call a service on it from tests.
