@@ -1,1 +1,1 @@
-TODO(writer)
+A fast Home Assistant app for device controls and live camera feeds.
