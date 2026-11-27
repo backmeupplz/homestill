@@ -310,6 +310,39 @@ import XCTest
         XCTAssertEqual(show(arranged(#"{"order":["zz","area:a"]}"#)), "A[a1 a2 a4 a3] Scenes[s] B[b1] Other[o]")
     }
 
+    func testFavoritesVectors() {
+        func ids(_ l: Homestill.Layout) -> [String] { Ha.favorites(sections, l).map(\.id) }
+        var l = Layout.parse(#"{"favorites":["light.b1","sensor.zz","scene.s"],"order":["area:b"],"hidden":["light.a1"]}"#)
+        XCTAssertEqual(ids(l), ["light.b1", "scene.s"])
+        XCTAssertEqual(Ha.favorites(sections, l)[0].name, "B Lamp", "full name, out of its room")
+        XCTAssertEqual(l.reset, Homestill.Layout(favorites: ["light.b1", "sensor.zz", "scene.s"]), "Reset Home layout keeps exactly the favorites")
+        l.moveFavorite("scene.s", to: 0, sections)
+        XCTAssertEqual(l.favorites, ["scene.s", "light.b1", "sensor.zz"])
+        // stored and read back: favorites survive a relaunch
+        let json = String(decoding: try! JSONEncoder().encode(l), as: UTF8.self)
+        XCTAssertEqual(Layout.parse(json).favorites, ["scene.s", "light.b1", "sensor.zz"])
+
+        l = Layout.parse(#"{"hidden":["light.a2"],"favorites":["light.a2"]}"#)
+        XCTAssertEqual(ids(l), ["light.a2"], "hidden on Home, still a favorite")
+        l.toggle(\.favorites, "light.a1")
+        XCTAssertEqual(l.favorites, ["light.a2", "light.a1"])
+        l.toggle(\.favorites, "light.a1")
+        XCTAssertEqual(l.favorites, ["light.a2"])
+        XCTAssertEqual(ids(Homestill.Layout()), [String]())
+    }
+
+    func testSearchVectors() {
+        func found(_ q: String, _ json: String? = nil) -> String { show(Ha.search(arranged(json), q)) }
+        let home = show(Ha.visible(arranged(nil)))
+        XCTAssertEqual(found(""), home)
+        XCTAssertEqual(found("  "), home)
+        XCTAssertEqual(found("TWO"), "A[a2]")
+        XCTAssertEqual(found("b lamp"), "B[b1]", "full name")
+        XCTAssertEqual(found("other"), "Other[o]", "room title")
+        XCTAssertEqual(found(" two ", #"{"hidden":["light.a2"],"hiddenRooms":["area:a"]}"#), "A[a2]", "hidden tile in a hidden room")
+        XCTAssertEqual(found("zzz"), "")
+    }
+
     func testBrokenLayoutIsTheDefault() {
         XCTAssertEqual(Layout.parse("not json"), Layout())
         XCTAssertEqual(Layout.parse(#"{"order":5}"#), Layout())

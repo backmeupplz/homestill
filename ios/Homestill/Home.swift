@@ -1,52 +1,124 @@
 import SwiftUI
 
 struct HomeView: View {
-    @State private var detail = Hooks.string("detail").map { DetailID(id: $0) }
     @State private var settings = Hooks.string("settings") != nil
     @State private var editing = Hooks.string("edit") != nil
+    @State private var query = ""
 
     var body: some View {
+        let rooms = Ha.search(ha.rooms, query)
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    ForEach(Ha.visible(ha.rooms)) { room in
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(room.name).font(.title3.bold()).padding(.leading, 4)
-                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                                ForEach(room.tiles) { p in TileView(t: p.t) { detail = DetailID(id: p.id) } }
-                            }
-                        }
-                    }
+            TileGrid(rooms: rooms, detail: Hooks.string("detail").map { DetailID(id: $0) })
+                .overlay {
+                    if ha.home.isEmpty && ha.connected { ContentUnavailableView("No devices", systemImage: "house") }
+                    else if rooms.isEmpty && !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { ContentUnavailableView.search(text: query) }
                 }
-                .padding(16)
-                .opacity(ha.connected ? 1 : 0.55)
-                .allowsHitTesting(ha.connected)
-            }
-            .overlay { if ha.home.isEmpty && ha.connected { ContentUnavailableView("No devices", systemImage: "house") } }
-            .safeAreaInset(edge: .top, spacing: 0) { Banner() }
-            .navigationTitle("Home")
-            .toolbar {
-                Button("Edit home", systemImage: "pencil") { editing = true }
-                Button("Settings", systemImage: "gearshape") { settings = true }
-            }
-            .sheet(isPresented: $settings) { SettingsView() }
-            .fullScreenCover(isPresented: $editing) { EditHome() }
-            .sheet(item: $detail) { d in
-                // the color wheel, the long media/climate sheets and the alarm's number pad need the full height
-                let t = ha.tile(d.id)
-                let color = !Set(t?.modes ?? []).isDisjoint(with: ["hs", "rgb", "rgbw", "rgbww", "xy"])
-                let tall = color || ["climate", "media_player", "alarm_control_panel"].contains(t?.domain ?? "")
-                DetailSheet(id: d.id).presentationDetents(tall ? [.large] : [.medium])
-            }
-            .alert(ha.unlockAsk.map { "Unlock \($0.name)?" } ?? "", isPresented: Binding { ha.unlockAsk != nil } set: { if !$0 { ha.unlockAsk = nil } }) {
-                Button("Unlock", role: .destructive) { if let t = ha.unlockAsk { ha.unlock(t) } }
-                Button("Cancel", role: .cancel) {}
-            }
+                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
+                .safeAreaInset(edge: .top, spacing: 0) { Banner() }
+                .navigationTitle("Home")
+                .toolbar {
+                    Button("Edit home", systemImage: "pencil") { editing = true }
+                    Button("Settings", systemImage: "gearshape") { settings = true }
+                }
+                .sheet(isPresented: $settings) { SettingsView() }
+                .fullScreenCover(isPresented: $editing) { EditHome() }
         }
     }
 }
 
-struct DetailID: Identifiable { var id: String }
+/// SPEC "Favorites": the starred tiles in one grid without headers; starring happens in Edit home.
+struct FavoritesView: View {
+    @State private var settings = false
+    @State private var editing = false
+
+    var body: some View {
+        let favs = Ha.favorites(ha.home, ha.layout)
+        NavigationStack {
+            TileGrid(rooms: [Room(key: "favorites", name: "", hidden: false, tiles: favs.map { Placed(t: $0) })])
+                .overlay {
+                    if favs.isEmpty && (ha.connected || ha.layout.favorites.isEmpty) { // offline, a stored list may just not be synced yet
+                        ContentUnavailableView("No favorites yet", systemImage: "star", description: Text("Tap the star next to a device in Edit home."))
+                    }
+                }
+                .safeAreaInset(edge: .top, spacing: 0) { Banner() }
+                .navigationTitle("Favorites")
+                .toolbar {
+                    if !favs.isEmpty { Button("Edit favorites", systemImage: "pencil") { editing = true } }
+                    Button("Settings", systemImage: "gearshape") { settings = true }
+                }
+                .sheet(isPresented: $settings) { SettingsView() }
+                .fullScreenCover(isPresented: $editing) { EditFavorites() }
+        }
+    }
+}
+
+/// Home and Favorites: rooms of tiles (a room without a name gets no header) and the detail sheet.
+struct TileGrid: View {
+    let rooms: [Room]
+    @State var detail: DetailID?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                ForEach(rooms) { room in
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !room.name.isEmpty { Text(room.name).font(.title3.bold()).padding(.leading, 4) }
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                            ForEach(room.tiles) { p in TileView(t: p.t) { detail = DetailID(id: p.id, name: p.t.name) } }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .opacity(ha.connected ? 1 : 0.55)
+            .allowsHitTesting(ha.connected)
+        }
+        .sheet(item: $detail) { d in
+            // the color wheel, the long media/climate sheets and the alarm's number pad need the full height
+            let t = ha.tile(d.id)
+            let color = !Set(t?.modes ?? []).isDisjoint(with: ["hs", "rgb", "rgbw", "rgbww", "xy"])
+            let tall = color || ["climate", "media_player", "alarm_control_panel"].contains(t?.domain ?? "")
+            DetailSheet(id: d.id, name: d.name).presentationDetents(tall ? [.large] : [.medium])
+        }
+    }
+}
+
+/// "Edit favorites": reorder (drag or the arrows) and unstar; saves on every change.
+struct EditFavorites: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let favs = Ha.favorites(ha.home, ha.layout)
+        NavigationStack {
+            List {
+                ForEach(Array(favs.enumerated()), id: \.element.id) { i, t in
+                    HStack(spacing: 12) {
+                        Image(systemName: TileView.icon(t)).foregroundStyle(.secondary).frame(width: 28)
+                        Text(t.name).lineLimit(1)
+                        Spacer()
+                        Button("Move up", systemImage: "chevron.up") { ha.edit { $0.moveFavorite(t.id, to: i - 1, ha.home) } }.disabled(i == 0)
+                        Button("Move down", systemImage: "chevron.down") { ha.edit { $0.moveFavorite(t.id, to: i + 1, ha.home) } }
+                            .disabled(i == favs.count - 1)
+                        Button("Remove from favorites", systemImage: "star.fill") { ha.edit { $0.toggle(\.favorites, t.id) } }
+                            .foregroundStyle(.tint).accessibilityIdentifier("star " + t.id)
+                    }
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
+                }
+                .onMove { from, to in
+                    guard let f = from.first else { return }
+                    ha.edit { $0.moveFavorite(favs[f].id, to: to > f ? to - 1 : to, ha.home) }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .overlay { if favs.isEmpty { ContentUnavailableView("No favorites yet", systemImage: "star") } }
+            .navigationTitle("Edit favorites").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+/// `name`: the tile as shown (a favorite or moved tile shows its full name), for the sheet's title.
+struct DetailID: Identifiable { var id: String; var name: String? }
 
 /// "Edit home" (SPEC "Customizing Home"): one flat list of room headers and tile rows, so a tile can be dragged across
 /// rooms; every move also works from the tile's menu. Draws from `ha.rooms`, saves on every change.
@@ -76,7 +148,7 @@ struct EditHome: View {
                 }
             }
             .alert("Reset?", isPresented: $askReset) {
-                Button("Reset", role: .destructive) { ha.resetLayout() }
+                Button("Reset", role: .destructive) { ha.edit { $0 = $0.reset } }
                 Button("Cancel", role: .cancel) {}
             }
         }
@@ -126,6 +198,10 @@ struct EditHome: View {
             .tint(.primary) // a row, not a tinted button
             .opacity(p.hidden ? 0.45 : 1)
             .accessibilityIdentifier("edit " + p.id)
+            let fav = ha.layout.favorites.contains(p.id)
+            Button(fav ? "Remove from favorites" : "Add to favorites", systemImage: fav ? "star.fill" : "star") { ha.edit { $0.toggle(\.favorites, p.id) } }
+                .labelStyle(.iconOnly).foregroundStyle(fav ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .accessibilityIdentifier("star " + p.id)
             eye(hidden: p.hidden, id: p.id) { $0.toggle(\.hidden, p.id) }
         }
         .buttonStyle(.borderless)
@@ -298,12 +374,13 @@ struct TileView: View {
 /// Long-press sheet: lights, fans and covers have their own rows; every other domain is built from `Row`s.
 struct DetailSheet: View {
     let id: String
+    var name: String?
     @State private var code = "" // alarm code: never stored
     @State private var ask: Btn?
 
     var body: some View {
         NavigationStack {
-            if let t = ha.tile(id) {
+            if let t = ha.tile(id).map({ var t = $0; t.name = name ?? t.name; return t }) {
                 Form {
                     switch t.domain {
                     case "cover": cover(t)

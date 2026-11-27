@@ -15,7 +15,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -87,33 +92,72 @@ fun Root() {
     if (Ha.base == null) { SignIn(); return }
     var settings by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
-    var cameras by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf("home") } // home, favorites, cameras
+    var query by remember { mutableStateOf<String?>(null) } // Home's search; null = not searching
+    var focusSearch by remember { mutableStateOf(false) } // set by the magnifier: the field takes focus once
     var full by remember { mutableStateOf<String?>(null) }
-    val camTab = cameras && Ha.cams.isNotEmpty()
+    val shown = if (tab == "cameras" && Ha.cams.isEmpty()) "home" else tab
+    val favs = favorites(Ha.sections, Ha.layout)
+    val q = query.takeIf { shown == "home" }
+    val live = Ha.status == Status.Live // offline, an empty list may only mean "not synced yet": no empty text then
+    LaunchedEffect(Ha.cams.isEmpty()) { if (Ha.cams.isEmpty() && tab == "cameras") tab = "home" } // no jump back when they return
     when {
         full != null -> { BackHandler { full = null }; FullCamera(full!!) { full = null } }
         settings -> { BackHandler { settings = false }; Settings { settings = false } }
-        editing -> { BackHandler { editing = false }; EditHome { editing = false } }
+        editing -> { BackHandler { editing = false }; if (shown == "favorites") EditFavorites { editing = false } else EditHome { editing = false } }
         else -> Scaffold(
             topBar = {
                 Column {
-                    TopAppBar(title = { Text(if (camTab) "Cameras" else "Home") }, actions = {
-                        if (!camTab) IconButton({ editing = true }) { Icon(Ic.Edit, "Edit home") }
+                    if (q != null) {
+                        BackHandler { query = null }
+                        TopAppBar(title = { SearchField(q, focusSearch, { focusSearch = false }) { query = it } }, navigationIcon = { IconButton({ query = null }) { Icon(Ic.Back, "Close search") } })
+                    } else TopAppBar(title = { Text(shown.replaceFirstChar { it.uppercase() }) }, actions = {
+                        if (shown == "home") {
+                            IconButton({ query = ""; focusSearch = true }) { Icon(Ic.Search, "Search") }
+                            IconButton({ editing = true }) { Icon(Ic.Edit, "Edit home") }
+                        }
+                        if (shown == "favorites" && favs.isNotEmpty()) IconButton({ editing = true }) { Icon(Ic.Edit, "Edit favorites") }
                         IconButton({ settings = true }) { Icon(Ic.Settings, "Settings") }
                     })
                     Banner()
                 }
             },
             bottomBar = {
-                if (Ha.cams.isNotEmpty()) NavigationBar {
-                    NavigationBarItem(!camTab, { cameras = false }, { Icon(Ic.Home, null) }, label = { Text("Home") })
-                    NavigationBarItem(camTab, { cameras = true }, { Icon(Ic.Camera, null) }, label = { Text("Cameras") })
+                NavigationBar {
+                    NavigationBarItem(shown == "home", { tab = "home" }, { Icon(Ic.Home, null) }, label = { Text("Home") })
+                    NavigationBarItem(shown == "favorites", { tab = "favorites" }, { Icon(Ic.Star, null) }, label = { Text("Favorites") })
+                    if (Ha.cams.isNotEmpty()) NavigationBarItem(shown == "cameras", { tab = "cameras" }, { Icon(Ic.Camera, null) }, label = { Text("Cameras") })
                 }
             },
         ) { pad ->
-            Box(Modifier.padding(pad)) { if (camTab) CamerasScreen { full = it } else HomeScreen() }
+            // the Scaffold's insets leave out the keyboard: while searching, the last results scroll above it
+            Box(Modifier.padding(pad).consumeWindowInsets(pad).imePadding()) {
+                when (shown) {
+                    "cameras" -> CamerasScreen { full = it }
+                    "favorites" -> TileGrid(listOf(Room("favorites", "", false, favs.map { Spot(it, false, false) })),
+                        "No favorites yet\nTap the star next to a device in Edit home.".takeIf { live || Ha.layout?.strings("favorites").isNullOrEmpty() })
+                    else -> {
+                        val grid = rememberLazyGridState()
+                        // the grid keeps its place by the first visible tile's key: new results start at the top instead
+                        LaunchedEffect(q) { if (!q.isNullOrBlank()) grid.scrollToItem(0) }
+                        TileGrid(search(arrange(Ha.sections, Ha.layout), q.orEmpty()), if (!q.isNullOrBlank()) "No matches" else "No devices to show".takeIf { live }, grid)
+                    }
+                }
+            }
         }
     }
+}
+
+/** The top bar's search field: focused with the keyboard up when [focus] (it just opened); the keyboard's search key hides the keyboard. */
+@Composable
+fun SearchField(q: String, focus: Boolean, onFocused: () -> Unit, onChange: (String) -> Unit) {
+    val field = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val clear = Color.Transparent
+    TextField(q, onChange, Modifier.fillMaxWidth().focusRequester(field), placeholder = { Text("Search") }, singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        colors = TextFieldDefaults.colors(focusedContainerColor = clear, unfocusedContainerColor = clear, focusedIndicatorColor = clear, unfocusedIndicatorColor = clear))
+    LaunchedEffect(focus) { if (focus) { field.requestFocus(); onFocused() } }
 }
 
 @Composable
@@ -167,17 +211,20 @@ fun SignIn() {
     }
 }
 
+/** Home and Favorites: rooms of tiles (a room without a title gets no header), with the detail sheet and the unlock confirm.
+ *  [empty] is shown when there is no tile; null shows nothing. */
 @Composable
-fun HomeScreen() {
+fun TileGrid(rooms: List<Room>, empty: String?, grid: LazyGridState = rememberLazyGridState()) {
     var sheet by remember { mutableStateOf<Tile?>(null) }
     var confirm by remember { mutableStateOf<Tile?>(null) }
     val live = Ha.status == Status.Live
-    val rooms = homeRooms(arrange(Ha.sections, Ha.layout))
-    if (rooms.isEmpty() && live) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No devices to show", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize().alpha(if (live) 1f else 0.6f), contentPadding = PaddingValues(12.dp),
+    if (empty != null && rooms.all { it.tiles.isEmpty() }) Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Text(empty, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+    LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize().alpha(if (live) 1f else 0.6f), grid, contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         for (r in rooms) {
-            item(key = "h:" + r.key, span = { GridItemSpan(maxLineSpan) }) {
+            if (r.title.isNotEmpty()) item(key = "h:" + r.key, span = { GridItemSpan(maxLineSpan) }) {
                 Text(r.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
             }
             items(r.tiles, key = { r.key + "|" + it.t.id }) { (t) -> EntityTile(t, live, { sheet = t }, { confirm = t }) }
@@ -636,7 +683,7 @@ fun EditHome(onBack: () -> Unit) {
                             Text(r.title, style = MaterialTheme.typography.titleMedium)
                             if (r.hidden) Text("Hidden", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton({ Ha.saveLayout(toggleHidden(Ha.layout, "hiddenRooms", r.key)) }) {
+                        IconButton({ Ha.saveLayout(toggle(Ha.layout, "hiddenRooms", r.key)) }) {
                             Icon(if (r.hidden) Ic.EyeOff else Ic.Eye, if (r.hidden) "Show ${r.title}" else "Hide ${r.title}")
                         }
                         IconButton({ save(moveRoom(Ha.layout, Ha.sections, r.key, ri - 1)) }, enabled = ri > 0) { Icon(Ic.ArrowUp, "Move ${r.title} up") }
@@ -659,7 +706,12 @@ fun EditHome(onBack: () -> Unit) {
                                     if (s.hidden) Text("Hidden", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            IconButton({ Ha.saveLayout(toggleHidden(Ha.layout, "hidden", id)) }) {
+                            val fav = id in Ha.layout?.strings("favorites").orEmpty()
+                            IconButton({ Ha.saveLayout(toggle(Ha.layout, "favorites", id)) }) {
+                                Icon(if (fav) Ic.Star else Ic.StarBorder, if (fav) "Remove ${s.t.name} from favorites" else "Add ${s.t.name} to favorites",
+                                    tint = if (fav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton({ Ha.saveLayout(toggle(Ha.layout, "hidden", id)) }) {
                                 Icon(if (s.hidden) Ic.EyeOff else Ic.Eye, if (s.hidden) "Show ${s.t.name}" else "Hide ${s.t.name}")
                             }
                             Icon(Ic.DragHandle, "Drag ${s.t.name}", Modifier.size(48.dp).pointerInput(id) {
@@ -682,8 +734,39 @@ fun EditHome(onBack: () -> Unit) {
         }
     }
     if (reset) AlertDialog({ reset = false }, title = { Text("Reset?") }, text = { Text("Home goes back to how Home Assistant arranges it.") },
-        confirmButton = { TextButton({ reset = false; save(null) }) { Text("Reset") } },
+        confirmButton = { TextButton({ reset = false; save(resetLayout(Ha.layout)) }) { Text("Reset") } },
         dismissButton = { TextButton({ reset = false }) { Text("Cancel") } })
+}
+
+/** "Edit favorites": a row per favorite to reorder or unstar; every change is saved at once. */
+@Composable
+fun EditFavorites(onBack: () -> Unit) {
+    val favs = favorites(Ha.sections, Ha.layout)
+    val list = rememberLazyListState()
+    /** Saves a change; the view stays where it is (the list would otherwise follow its first row when that row moves down). */
+    fun save(l: JSONObject?) {
+        list.requestScrollToItem(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset)
+        Ha.saveLayout(l)
+    }
+    Scaffold(topBar = { TopAppBar(title = { Text("Edit favorites") }, navigationIcon = { IconButton(onBack) { Icon(Ic.Back, "Done") } }) }) { pad ->
+        if (favs.isEmpty()) Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No favorites yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LazyColumn(Modifier.padding(pad).fillMaxSize(), list) {
+            itemsIndexed(favs, key = { _, t -> t.id }) { i, t ->
+                val e = Ha.ents[t.id]
+                Row(Modifier.animateItem().fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon(domain(t.id), e?.s.orEmpty(), e?.a ?: JSONObject()), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(t.name, Modifier.weight(1f).padding(start = 16.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    IconButton({ save(moveFavorite(Ha.layout, Ha.sections, t.id, i - 1)) }, enabled = i > 0) { Icon(Ic.ArrowUp, "Move ${t.name} up") }
+                    IconButton({ save(moveFavorite(Ha.layout, Ha.sections, t.id, i + 1)) }, enabled = i < favs.size - 1) { Icon(Ic.ArrowDown, "Move ${t.name} down") }
+                    IconButton({ save(toggle(Ha.layout, "favorites", t.id)) }) {
+                        Icon(Ic.Star, "Remove ${t.name} from favorites", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun vec(name: String, path: String) = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
@@ -716,6 +799,9 @@ object Ic {
     // robot vacuum seen from above: a ring with a bumper dot
     val Vacuum by lazy { vec("vacuum", "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zM10 8a2 2 0 1 0 4 0 2 2 0 1 0-4 0z") }
     val Grass by lazy { vec("grass", "M2 20h20v-2H2zm2-3l2.5-8L9 17zm6 0l2-11 2 11zm5 0l2.5-8L20 17z") }
+    val Search by lazy { vec("search", "M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z") }
+    val Star by lazy { vec("star", "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z") }
+    val StarBorder by lazy { vec("starborder", "M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z") }
     val Up by lazy { vec("up", "M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z") }
     val Edit by lazy { vec("edit", "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z") }
     val Eye by lazy { vec("eye", "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z") }

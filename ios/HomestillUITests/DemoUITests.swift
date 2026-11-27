@@ -81,6 +81,71 @@ final class DemoUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Tilt up"].exists)
     }
 
+    /// Stars in Edit home fill the Favorites tab (a hidden tile too; a locked lock still asks once); Reset keeps them;
+    /// search finds the hidden tile on Home.
+    func testFavoritesAndSearch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-signout", "1", "-server", "http://127.0.0.1:8124", "-user", "demo", "-pass", "demo-pass"]
+        app.launch()
+        let tile = app.descendants(matching: .any)["switch.decorative_lights"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 20))
+        app.tabBars.buttons["Favorites"].tap()
+        XCTAssertTrue(app.staticTexts["No favorites yet"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Home"].tap()
+
+        app.buttons["Edit home"].tap()
+        let editor = app.collectionViews["editor"]
+        app.buttons["eye switch.decorative_lights"].tap() // hidden on Home, still a favorite
+        for id in ["switch.decorative_lights", "lock.front_door"] {
+            let star = app.buttons["star " + id]
+            for _ in 0..<8 where !star.isHittable { editor.swipeUp() }
+            star.tap()
+            XCTAssertEqual(star.label, "Remove from favorites")
+        }
+        app.buttons["Done"].tap()
+        XCTAssertTrue(tile.waitForNonExistence(timeout: 5))
+
+        app.tabBars.buttons["Favorites"].tap()
+        XCTAssertTrue(tile.waitForExistence(timeout: 5))
+        let lock = app.descendants(matching: .any)["lock.front_door"].firstMatch
+        XCTAssertTrue(lock.exists)
+        XCTAssertLessThan(tile.frame.minX, lock.frame.minX, "in starring order")
+        lock.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 1)
+        app.alerts.firstMatch.buttons["Cancel"].tap()
+
+        app.buttons["Edit favorites"].tap()
+        app.buttons["star lock.front_door"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(lock.waitForNonExistence(timeout: 5))
+
+        app.tabBars.buttons["Home"].tap()
+        app.buttons["Edit home"].tap()
+        app.buttons["More"].tap()
+        app.buttons["Reset Home layout"].tap()
+        app.alerts["Reset?"].buttons["Reset"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "back on Home after Reset")
+        app.tabBars.buttons["Favorites"].tap()
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "Reset keeps favorites")
+
+        app.tabBars.buttons["Home"].tap()
+        app.buttons["Edit home"].tap()
+        app.buttons["eye switch.decorative_lights"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(tile.waitForNonExistence(timeout: 5))
+        let field = app.searchFields.firstMatch
+        if !field.exists { app.swipeDown() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("DECORATIVE")
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "search finds a hidden tile")
+        XCTAssertFalse(app.descendants(matching: .any)["lock.front_door"].exists)
+        field.typeText("zzz")
+        XCTAssertFalse(tile.exists)
+    }
+
     /// Edit home without dragging: the eye hides a tile, the row menu moves one, Reset brings Home back.
     func testEditHome() {
         let app = XCUIApplication()

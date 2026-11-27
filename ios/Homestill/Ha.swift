@@ -102,6 +102,8 @@ struct Layout: Codable, Equatable {
     var tiles: [String: [String]] = [:]
     var moved: [String: String] = [:]
     var hidden: [String] = []
+    /// The Favorites tab, in order (SPEC "Favorites").
+    var favorites: [String] = []
 
     /// Moves tile `id` to position `i` of room `r` (its own room or another). The room it left needs no change.
     mutating func moveTile(_ id: String, to r: String, at i: Int, _ sections: [Section]) {
@@ -120,7 +122,18 @@ struct Layout: Codable, Equatable {
         order = keys + order.filter { !current.contains($0) }
     }
 
-    /// Eye toggles: `\.hidden` (tiles) or `\.hiddenRooms`.
+    /// Moves favorite `id` to position `i`: the current favorites in the new order, then the stored ids that aren't current.
+    mutating func moveFavorite(_ id: String, to i: Int, _ sections: [Section]) {
+        var ids = Ha.favorites(sections, self).map(\.id).filter { $0 != id }
+        ids.insert(id, at: min(max(i, 0), ids.count))
+        let current = Set(sections.flatMap { $0.tiles.map(\.id) })
+        favorites = ids + favorites.filter { !current.contains($0) }
+    }
+
+    /// "Reset Home layout": the default Home; the favorites stay.
+    var reset: Layout { Layout(favorites: favorites) }
+
+    /// Eye and star toggles: `\.hidden` (tiles), `\.hiddenRooms` or `\.favorites` (adds to the end).
     mutating func toggle(_ list: WritableKeyPath<Layout, [String]>, _ id: String) {
         if self[keyPath: list].contains(id) { self[keyPath: list].removeAll { $0 == id } } else { self[keyPath: list].append(id) }
     }
@@ -137,6 +150,7 @@ extension Layout {
         tiles = try c.decodeIfPresent([String: [String]].self, forKey: .tiles) ?? [:]
         moved = try c.decodeIfPresent([String: String].self, forKey: .moved) ?? [:]
         hidden = try c.decodeIfPresent([String].self, forKey: .hidden) ?? []
+        favorites = try c.decodeIfPresent([String].self, forKey: .favorites) ?? []
     }
 }
 
@@ -243,6 +257,26 @@ extension Ha {
                 .sorted { (rank[$0.element.id] ?? .max, $0.offset) < (rank[$1.element.id] ?? .max, $1.offset) }.map(\.element)
             return Room(key: k, name: names[k] ?? k, hidden: hiddenRooms.contains(k), tiles: tiles)
         }
+    }
+
+    /// SPEC "Search": every tile (hidden ones too) whose name, full name or room title holds the query; blank = what Home draws.
+    static func search(_ rooms: [Room], _ query: String) -> [Room] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return visible(rooms) }
+        func has(_ s: String) -> Bool { s.range(of: q, options: .caseInsensitive) != nil }
+        return rooms.map { r in
+            var r = r
+            let room = has(r.name)
+            r.tiles.removeAll { !room && !has($0.t.name) && !has($0.t.full) }
+            return r
+        }.filter { !$0.tiles.isEmpty }
+    }
+
+    /// SPEC "Favorites": the current tiles starred in `favorites`, in that order, each by its full name.
+    nonisolated static func favorites(_ sections: [Section], _ l: Layout) -> [Tile] {
+        let all = Dictionary(sections.flatMap(\.tiles).map { ($0.id, $0) }) { a, _ in a }
+        var seen = Set<String>()
+        return l.favorites.filter { seen.insert($0).inserted }.compactMap { id in all[id].map { var t = $0; t.name = t.full; return t } }
     }
 
     /// What Home draws: rooms that aren't hidden, with their tiles that aren't; a room left empty isn't drawn.

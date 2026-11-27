@@ -86,11 +86,44 @@ class LayoutTest {
         assertFalse(back.getJSONObject("moved").has("light.a1"))
         assertEquals(listOf("light.a2", "light.a1", "light.a4", "sensor.a3"), back.getJSONObject("tiles").strings("area:a"))
         // eye toggles add and remove
-        val h = toggleHidden(JSONObject("""{"order":["area:b"]}"""), "hidden", "light.a2")
+        val h = toggle(JSONObject("""{"order":["area:b"]}"""), "hidden", "light.a2")
         assertEquals(listOf("light.a2"), h.strings("hidden"))
         assertEquals(listOf("area:b"), h.strings("order")) // the rest of the layout is kept
-        assertEquals(emptyList<String>(), toggleHidden(h, "hidden", "light.a2").strings("hidden"))
-        assertEquals(listOf("other"), toggleHidden(null, "hiddenRooms", "other").strings("hiddenRooms"))
+        assertEquals(emptyList<String>(), toggle(h, "hidden", "light.a2").strings("hidden"))
+        assertEquals(listOf("other"), toggle(null, "hiddenRooms", "other").strings("hiddenRooms"))
+    }
+
+    private fun favs(layout: JSONObject?) = favorites(sections, layout).map { it.id }
+
+    @Test fun favoritesVectors() {
+        val l = JSONObject("""{"favorites":["light.b1","sensor.zz","scene.s"],"order":["area:b"],"hidden":["light.a1"]}""")
+        assertEquals(listOf("light.b1", "scene.s"), favs(l))
+        assertEquals("B Lamp", favorites(sections, l)[0].name) // full name, out of its room
+        assertEquals(listOf("scene.s", "light.b1", "sensor.zz"), moveFavorite(l, sections, "scene.s", 0).strings("favorites"))
+        assertEquals("""{"favorites":["light.b1","sensor.zz","scene.s"]}""", resetLayout(l).toString()) // reset keeps favorites only
+        assertNull(resetLayout(JSONObject("""{"order":["area:b"]}""")))
+        assertNull(resetLayout(null))
+
+        val h = JSONObject("""{"hidden":["light.a2"],"favorites":["light.a2"]}""")
+        assertEquals(listOf("light.a2"), favs(h)) // hidden on Home, still a favorite
+        val starred = toggle(h, "favorites", "light.a1")
+        assertEquals(listOf("light.a2", "light.a1"), starred.strings("favorites"))
+        assertEquals(listOf("light.a2"), toggle(starred, "favorites", "light.a1").strings("favorites"))
+        assertEquals(emptyList<String>(), favs(null))
+        assertEquals(emptyList<String>(), favs(JSONObject("""{"favorites":"x"}""")))
+    }
+
+    private fun found(q: String, layout: String? = null) = search(arr(layout), q).map { r -> r.title + r.tiles.map { it.t.id } }
+
+    @Test fun searchVectors() {
+        val home = homeRooms(arr(null)).map { r -> r.title + r.tiles.map { it.t.id } }
+        assertEquals(home, found(""))
+        assertEquals(home, found("  "))
+        assertEquals(listOf("A[light.a2]"), found("TWO"))
+        assertEquals(listOf("B[light.b1]"), found("b lamp"))
+        assertEquals(listOf("Other[switch.o]"), found("other"))
+        assertEquals(listOf("A[light.a2]"), found(" two ", """{"hidden":["light.a2"],"hiddenRooms":["area:a"]}"""))
+        assertEquals(emptyList<String>(), found("zzz"))
     }
 
     @Test fun malformedLayoutIsIgnored() {

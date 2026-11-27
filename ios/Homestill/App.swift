@@ -25,13 +25,21 @@ struct Root: View {
     var body: some View {
         Group {
             if !ha.signedIn { SignIn() }
-            else if ha.cameras.isEmpty { HomeView() }
             else {
-                TabView(selection: $tab) {
+                // the Cameras tab goes with the last camera: Home shows then
+                TabView(selection: Binding { tab == "cameras" && ha.cameras.isEmpty ? "home" : tab } set: { tab = $0 }) {
                     Tab("Home", systemImage: "house.fill", value: "home") { HomeView() }
-                    Tab("Cameras", systemImage: "video.fill", value: "cameras") { CamerasView() }
+                    Tab("Favorites", systemImage: "star.fill", value: "favorites") { FavoritesView() }
+                    if !ha.cameras.isEmpty { Tab("Cameras", systemImage: "video.fill", value: "cameras") { CamerasView() } }
                 }
+                .onChange(of: ha.cameras.isEmpty) { _, none in if none && tab == "cameras" { tab = "home" } } // no jump back later
             }
+        }
+        .onChange(of: ha.signedIn) { _, s in if !s { tab = "home" } } // signing in again starts on Home
+        // one unlock confirm for Home and Favorites
+        .alert(ha.unlockAsk.map { "Unlock \($0.name)?" } ?? "", isPresented: Binding { ha.unlockAsk != nil } set: { if !$0 { ha.unlockAsk = nil } }) {
+            Button("Unlock", role: .destructive) { if let t = ha.unlockAsk { ha.unlock(t) } }
+            Button("Cancel", role: .cancel) {}
         }
         .toast()
         .animation(.smooth, value: ha.signedIn)
@@ -127,7 +135,7 @@ struct SettingsView: View {
 
 /// Launch arguments for driving the app without taps (Debug only; Release ignores them):
 /// `-signout 1`, `-server URL -user U -pass P` (when signed out), `-badtoken 1`, `-noconnect 1` (draw the cache only),
-/// `-tab cameras`, `-settings 1`, `-edit 1` (Edit home), `-detail <entity_id>`, `-camera <entity_id>` (full screen),
+/// `-tab cameras|favorites`, `-settings 1`, `-edit 1` (Edit home), `-detail <entity_id>`, `-camera <entity_id>` (full screen),
 /// `-tap <entity_id>` (taps a tile once synced; refused unless the server is localhost, so never on a real home).
 @MainActor enum Hooks {
 #if !DEBUG

@@ -8,7 +8,8 @@ Spinwell (`~/code/spinwell-main`, the closest: Compose + SwiftUI, SPEC-driven) a
 
 No Home Assistant dashboards, history, graphs, automations, notifications, widgets, energy, map or settings editor.
 Sensors appear only as one-line readings inside rooms. The Home screen's own layout (room order, tile order, moving
-tiles between rooms, hiding) is customizable on the phone ("Customizing Home"); nothing is written to Home Assistant.
+tiles between rooms, hiding) and a Favorites tab are customizable on the phone ("Customizing Home", "Favorites");
+nothing is written to Home Assistant. Home can be searched ("Search").
 
 ## Platforms
 
@@ -130,7 +131,7 @@ tiles between rooms, hiding) is customizable on the phone ("Customizing Home"); 
 
 ## Home screen
 
-- Top bar: title "Home", a pencil ("Edit home") → the editor (below), a gear → Settings. A slim banner under it when not connected: "Connecting…" or
+- Top bar: title "Home", a magnifier ("Search", below), a pencil ("Edit home") → the editor (below), a gear → Settings. A slim banner under it when not connected: "Connecting…" or
   "Can't reach Home Assistant" (tap retries now). While not connected tiles are dimmed and taps do nothing.
 - Sections per area, each a 2-column grid of tiles (rounded cards: icon, name, one-line state). Within a section,
   controls first, then settings and readings, each sorted by name. "On"-like tiles are tinted: lights by their
@@ -164,7 +165,7 @@ sliders), stepper (− value +, sends 600 ms after the last press), picker (menu
 action buttons (a row of tonal buttons), code field. `f` = `supported_features`; a row whose feature bit is missing,
 or whose list attribute is empty, is left out. Every call targets the tile's entity. Long-press (iOS: the same
 gesture as lights) opens the sheet for every domain that has one, also where a tap acts. The sheet's title is the
-name, its subtitle the state text, as for lights. Service names and feature bits
+name as shown on the tile (the full name for favorites and moved tiles), its subtitle the state text, as for lights. Service names and feature bits
 were read from Home Assistant 2026.11.
 
 | Domain | State text | Active | Tap | Sheet |
@@ -198,6 +199,16 @@ domain (binary sensors and sensors may pick by `device_class` where a glyph exis
 - Optimistic update: flip `s` locally at once; if the server's state hasn't confirmed within 5 s (or the call fails),
   put back the last server state.
 
+### Search
+
+- Android: the magnifier turns the top bar into a text field (focused, keyboard up) with a back arrow that ends the
+  search. iOS: the system search field (`.searchable`). Home filters live as you type.
+- `search(rooms, query)` (pure, unit-tested) on `arrange`'s rooms: the query trimmed; blank = what Home draws. Otherwise
+  every tile, hidden ones and hidden rooms included (so a hidden device is still reachable), whose displayed name, full
+  name or room title contains the query, case-insensitive (no locale rules); grouped by room in Home's order, rooms
+  without a match dropped. Nothing matched: "No matches" (iOS: the system's no-results view). Matching tiles behave as on Home (tap, long-press, sheet).
+- Cameras are not searched (the Cameras tab is their list), and only the Home tab has search.
+
 ## Customizing Home
 
 The phone keeps one Home layout on top of the sections Home Assistant gives (above). It only stores the user's changes,
@@ -206,7 +217,8 @@ is not shown, the snapshot is drawn before a sync) keeps its place and its hidde
 
 - Layout (stored as this JSON, both platforms; Android: its own SharedPreferences file `layout`, key `layout`; iOS:
   UserDefaults key `layout`, the JSON as a string), every field optional:
-  `{"order":[room keys],"hiddenRooms":[room keys],"tiles":{"<room key>":[entity ids]},"moved":{"<entity id>":"<room key>"},"hidden":[entity ids]}`.
+  `{"order":[room keys],"hiddenRooms":[room keys],"tiles":{"<room key>":[entity ids]},"moved":{"<entity id>":"<room key>"},"hidden":[entity ids],"favorites":[entity ids]}`
+  (`favorites`: see "Favorites").
   `moved` holds only tiles dragged out of their own room. A broken or missing layout = the default Home.
 - `arrange(sections, layout)` (pure, unit-tested; the editor and Home both draw from it) → rooms, each with key, title,
   `hidden` flag and tiles, each tile with `hidden` and `moved` flags:
@@ -219,18 +231,19 @@ is not shown, the snapshot is drawn before a sync) keeps its place and its hidde
 - Home draws rooms that are not hidden, with their tiles that are not hidden; a room left with no tiles is not drawn.
 - The editor ("Edit home", a full screen from the pencil) lists every room and tile, hidden ones included, dimmed with
   "Hidden": a header row per room (title, eye toggle, move up / move down buttons) and under it a row per tile (domain
-  icon, name, eye toggle, drag handle). An empty room still shows its header, so tiles can be moved into it. Drag a tile
+  icon, name, star ("Add to favorites" / "Remove from favorites"; Android adds the name: "Add Lamp to favorites"; filled
+  when a favorite), eye toggle, drag handle). An empty room still shows its header, so tiles can be moved into it. Drag a tile
   by its handle within its room or into another room (it lands under the header it is dropped below; nothing can go above
   the first header). Tapping a tile row opens a menu: Move up, Move down, Move to room… (every room), so everything
   works without dragging (screen readers, tests). The top bar has a back arrow / "Done" and a menu with "Reset Home
-  layout" (confirm "Reset?", then delete the layout). Changes apply at once and are saved at once; there is no Cancel.
+  layout" (confirm "Reset?", then delete the layout except `favorites`: resetting Home keeps the Favorites tab). Changes apply at once and are saved at once; there is no Cancel.
   The editor redraws from `arrange` on every change and on every Home Assistant update while it is open.
 - Saving edits the stored layout, never rebuilds it from what is shown:
   - Moving a tile to room R: `moved[id] = R`, or remove `moved[id]` when R is its own section; `tiles[R]` = R's tile ids in
     their new order, followed by the ids already in the old `tiles[R]` that are not current (kept, so they come back in
     place). The room it left needs no change (rule 1/3 drop it there).
   - Moving a room: `order` = all current room keys in the new order, followed by old `order` keys that are not current.
-  - Eye toggles add to / remove from `hidden` or `hiddenRooms`.
+  - Eye toggles add to / remove from `hidden` or `hiddenRooms`; the star adds to the end of / removes from `favorites`.
 - The layout belongs to the phone: it is never sent anywhere. Sign out deletes it; a session that ended keeps it.
 - Cameras keep Home Assistant's areas for pan/tilt (the layout never changes `ptzTargets`), and the Cameras tab is not
   customizable.
@@ -247,10 +260,39 @@ is not shown, the snapshot is drawn before a sync) keeps its place and its hidde
   | `moved:{"light.a1":"area:gone"}` | A [a1 a2 a4 a3] (a1 not flagged moved) |
   | `hidden:["light.a2"], hiddenRooms:["other"]` | Home: A [a1 a4 a3], no Other; editor: a2 and Other flagged hidden |
   | `order:["zz","area:a"]` | A, Scenes, B, Other; then moving B to the top saves `order` = [area:b, area:a, scenes, other, zz] |
+  | `favorites:["light.b1","sensor.zz","scene.s"]` | Favorites: b1 (shown "B Lamp"), s; moving s to the top saves `favorites` = [scene.s, light.b1, sensor.zz]; Reset Home layout keeps exactly this `favorites` |
+  | `hidden:["light.a2"], favorites:["light.a2"]` | Favorites: a2 (hidden on Home, still a favorite); the star on a1 saves `favorites` = [light.a2, light.a1], again = [light.a2] |
+
+  Search, on `arrange` of the layout in the first column (none unless given):
+  | Query | Result |
+  | --- | --- |
+  | `""`, `"  "` | as Home: Scenes, A [a1 a2 a4 a3], B [b1], Other [o] |
+  | `"TWO"` | A [a2] |
+  | `"b lamp"` | B [b1] (full name) |
+  | `"other"` | Other [o] (room title) |
+  | `" two "` with `hidden:["light.a2"], hiddenRooms:["area:a"]` | A [a2] (hidden tile in a hidden room) |
+  | `"zzz"` | nothing |
+
+## Favorites
+
+- Bottom tab "Favorites", between Home and Cameras, always shown (it is where people look for favorites). Its top bar:
+  title "Favorites", a pencil ("Edit favorites", only when there is a favorite), a gear → Settings.
+- Starring happens in "Edit home" (the star on a tile row), for every kind of tile, readings included. Cameras can't be
+  favorites (the Cameras tab is already their list). Nothing starred yet: "No favorites yet" and under it "Tap the star
+  next to a device in Edit home."
+- `favorites(sections, layout)` (pure, unit-tested) → the tiles whose ids are in `favorites`, in that order, that are
+  current in any section; each shows its full name (out of its room, as a moved tile). Hidden on Home doesn't matter.
+  An id that is not current stays stored (it comes back in place when the device does).
+- The tab draws them as one 2-column grid without headers; tiles behave exactly as on Home (tap, long-press, sheet,
+  "Unlock …?" confirm). Dimmed and not tappable while not connected, as Home.
+- "Edit favorites" (a full screen from the pencil): a row per favorite (domain icon, full name, move up / move down,
+  filled star to remove it), "Done" / back arrow; with none left it says "No favorites yet". iOS rows also drag. Moving saves `favorites` = the current favorites
+  in the new order, followed by the stored ids that are not current (as `order`). Changes save at once.
 
 ## Cameras screen
 
-- Bottom tabs "Home" and "Cameras" (the Cameras tab only when there is at least one camera).
+- Bottom tabs "Home", "Favorites" and "Cameras" (the Cameras tab only when there is at least one camera; if the last
+  camera goes while it is open, Home shows and stays when cameras return; signing in again starts on Home).
 - A vertical list of 16:9 cards, one per camera, name under each. Cards on screen play live, muted, at once:
   - if `camera/capabilities` lists `hls`: `camera/stream` → play the HLS URL (iOS `AVPlayer`; Android ExoPlayer
     `HlsMediaSource`, low-latency live config, target offset ~2 s). Home Assistant serves low-latency HLS (H.264,
@@ -291,7 +333,7 @@ is not shown, the snapshot is drawn before a sync) keeps its place and its hidde
   controls before readings, prefix stripping, sort), state texts for the table above, tap decisions (lock, vacuum,
   media player, alarm never acting), the pan/tilt camera rule (own `onvif`; hidden `onvif` in the area of the only
   shown camera; two shown cameras in that area → none), token-needs-refresh decision, `arrange` and the layout
-  edits (the test vectors under "Customizing Home"). Android JUnit
+  edits, `search`, `favorites` and their edits (the test vectors under "Customizing Home"). Android JUnit
   (`testDebugUnitTest`), iOS XCTest target `HomestillTests`.
 - Control testing happens only against the throwaway demo server (`tools/demo-ha.sh`: Docker Home Assistant with the
   `demo` integration on :8124, user `demo` / `demo-pass`; emulator uses `http://10.0.2.2:8124`). Its rooms hold one of

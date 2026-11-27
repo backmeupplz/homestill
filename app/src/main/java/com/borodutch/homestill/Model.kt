@@ -168,11 +168,37 @@ fun moveRoom(layout: JSONObject?, sections: List<Section>, key: String, index: I
     return l.put("order", JSONArray(keys + l.strings("order").filter { it !in current }))
 }
 
-/** The eye toggle: adds [id] to (or removes it from) [field], `hidden` or `hiddenRooms`. */
-fun toggleHidden(layout: JSONObject?, field: String, id: String): JSONObject {
+/** The eye and star toggles: adds [id] to the end of (or removes it from) [field], `hidden`, `hiddenRooms` or `favorites`. */
+fun toggle(layout: JSONObject?, field: String, id: String): JSONObject {
     val l = copy(layout)
     val list = l.strings(field)
     return l.put(field, JSONArray(if (id in list) list.filter { it != id } else list + id))
+}
+
+/** "Reset Home layout": the layout without the user's Home changes; only `favorites` is kept (null = nothing left). */
+fun resetLayout(layout: JSONObject?): JSONObject? = layout?.optJSONArray("favorites")?.let { JSONObject().put("favorites", it) }
+
+/** SPEC "Search": every tile (hidden ones too) whose name, full name or room title holds [query]; blank = [homeRooms]. */
+fun search(rooms: List<Room>, query: String): List<Room> {
+    val q = query.trim()
+    if (q.isEmpty()) return homeRooms(rooms)
+    fun has(x: String) = x.contains(q, ignoreCase = true)
+    return rooms.map { r -> r.copy(tiles = r.tiles.filter { has(r.title) || has(it.t.name) || has(it.t.full) }) }.filter { it.tiles.isNotEmpty() }
+}
+
+/** SPEC "Favorites": the current tiles starred in `favorites`, in that order, each by its full name. */
+fun favorites(sections: List<Section>, layout: JSONObject?): List<Tile> {
+    val all = sections.flatMap { it.tiles }.associateBy { it.id }
+    return layout?.strings("favorites").orEmpty().distinct().mapNotNull { all[it]?.let { t -> t.copy(name = t.full) } }
+}
+
+/** Saves favorite [id] at [index]: the current favorites in the new order, then the stored ids that are not current. */
+fun moveFavorite(layout: JSONObject?, sections: List<Section>, id: String, index: Int): JSONObject {
+    val l = copy(layout)
+    val ids = favorites(sections, l).map { it.id }.filter { it != id }.toMutableList()
+    ids.add(index.coerceIn(0, ids.size), id)
+    val current = sections.flatMap { s -> s.tiles.map { it.id } }.toSet()
+    return l.put("favorites", JSONArray(ids + l.strings("favorites").filter { it !in current }))
 }
 
 fun buildCameras(ents: Map<String, Ent>, reg: Map<String, Reg>): List<Tile> =

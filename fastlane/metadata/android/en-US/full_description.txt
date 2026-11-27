@@ -11,6 +11,8 @@ Homestill pulls your rooms straight from your Home Assistant areas, so you do no
 • Valves, sirens, remotes, and number and select settings
 • Alarm panels that arm and disarm using your panel's code, which is never stored
 • Sensor, door, motion, and weather readings shown as clean one-line tiles inside each room
+• Search every room and device on Home as you type, and star the devices you use most to keep them together on a Favorites tab
+• Rearrange rooms and devices, move a device to another room, or hide the ones you never use, all stored only on your phone
 
 LIVE CAMERAS
 • Live video over Home Assistant's low-latency HLS stream, with the first frame measured at 0.2 to 0.65 seconds in tests
